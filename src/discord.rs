@@ -4,7 +4,22 @@
 //! usuário é um passo que ele esquece — então o instalador faz sozinho.
 
 use anyhow::Result;
-use std::{path::PathBuf, time::Duration};
+use std::{ffi::OsStr, path::PathBuf, process::Command, time::Duration};
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+/// `tasklist`, `taskkill` e o lançador do Discord são detalhes internos: a
+/// janela do FOL-discord nunca deve revelar esses processos ao usuário.
+fn comando_oculto(programa: impl AsRef<OsStr>) -> Command {
+    let mut comando = Command::new(programa);
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        comando.creation_flags(CREATE_NO_WINDOW);
+    }
+    comando
+}
 
 /// O lançador do Squirrel, que sempre aponta para a versão instalada no
 /// momento. Chamar por ele evita fixar `app-1.0.xxxx` no código e sobreviver
@@ -16,7 +31,7 @@ pub fn lancador() -> Option<PathBuf> {
 }
 
 pub fn esta_rodando() -> bool {
-    std::process::Command::new("tasklist")
+    comando_oculto("tasklist")
         .args(["/FI", "IMAGENAME eq Discord.exe", "/NH"])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).contains("Discord.exe"))
@@ -24,7 +39,7 @@ pub fn esta_rodando() -> bool {
 }
 
 fn encerrar() {
-    let _ = std::process::Command::new("taskkill")
+    let _ = comando_oculto("taskkill")
         .args(["/F", "/IM", "Discord.exe"])
         .output();
     std::thread::sleep(Duration::from_secs(3));
@@ -40,7 +55,7 @@ pub fn reiniciar() -> Result<bool> {
     if estava_aberto {
         encerrar();
     }
-    std::process::Command::new(lancador)
+    comando_oculto(lancador)
         .args(["--processStart", "Discord.exe"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
