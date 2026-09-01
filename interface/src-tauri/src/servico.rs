@@ -377,18 +377,28 @@ fn atualizacao_da_release(corpo: &str, versao_local: &str) -> Option<Atualizacao
     }
 
     let versao = release.tag_name.strip_prefix('v').unwrap_or(&release.tag_name);
-    let nome_do_setup = format!("FOL-discord_{versao}_x64-setup.exe");
-    let url_esperada = format!(
-        "https://github.com/schacal/FOL-discord/releases/download/{}/{}",
-        release.tag_name, nome_do_setup
+    let pasta_da_release = format!(
+        "https://github.com/schacal/FOL-discord/releases/download/{}/",
+        release.tag_name
     );
-    let asset = release.assets.into_iter().find(|asset| {
-        asset.name == nome_do_setup && asset.browser_download_url == url_esperada
-    })?;
+
+    // O nome com versão é o que o NSIS carimba; o nome estável é a cópia que o
+    // botão do README baixa. São o mesmo arquivo. A v0.2.5 saiu só com o
+    // segundo, e quem estava na v0.2.4 nunca soube dela — por isso os dois
+    // servem, nessa ordem. O que não muda: o asset precisa estar dentro da
+    // própria release deste repositório, nunca num endereço de fora.
+    let nome_do_setup = format!("FOL-discord_{versao}_x64-setup.exe");
+    let asset = [nome_do_setup.as_str(), "FOL-discord-setup.exe"]
+        .into_iter()
+        .find_map(|nome| {
+            release.assets.iter().find(|asset| {
+                asset.name == nome && asset.browser_download_url == format!("{pasta_da_release}{nome}")
+            })
+        })?;
 
     Some(Atualizacao {
         versao: versao.to_string(),
-        url: asset.browser_download_url,
+        url: asset.browser_download_url.clone(),
     })
 }
 
@@ -651,6 +661,67 @@ conexão encerrada: early eof\n",
             atualizacao.url,
             "https://github.com/schacal/FOL-discord/releases/download/v0.2.5/FOL-discord_0.2.5_x64-setup.exe"
         );
+    }
+
+    #[test]
+    fn aceita_a_copia_de_nome_estavel_quando_o_setup_com_versao_nao_foi_publicado() {
+        // Foi exatamente o caso da v0.2.5: a release saiu só com
+        // `FOL-discord-setup.exe`, e quem estava na v0.2.4 nunca viu o aviso.
+        // O nome estável é o mesmo arquivo, no mesmo endereço da release, e
+        // serve como reserva quando o nome com versão faltar.
+        let release = r#"{
+          "tag_name": "v0.2.5",
+          "draft": false,
+          "prerelease": false,
+          "assets": [{
+            "name": "FOL-discord-setup.exe",
+            "browser_download_url": "https://github.com/schacal/FOL-discord/releases/download/v0.2.5/FOL-discord-setup.exe"
+          }]
+        }"#;
+
+        let atualizacao = atualizacao_da_release(release, "0.2.4")
+            .expect("a cópia de nome estável deve bastar para avisar");
+
+        assert_eq!(atualizacao.versao, "0.2.5");
+        assert_eq!(
+            atualizacao.url,
+            "https://github.com/schacal/FOL-discord/releases/download/v0.2.5/FOL-discord-setup.exe"
+        );
+    }
+
+    #[test]
+    fn prefere_o_setup_com_versao_e_recusa_asset_fora_da_release() {
+        let com_os_dois = r#"{
+          "tag_name": "v0.2.6",
+          "draft": false,
+          "prerelease": false,
+          "assets": [
+            {
+              "name": "FOL-discord-setup.exe",
+              "browser_download_url": "https://github.com/schacal/FOL-discord/releases/download/v0.2.6/FOL-discord-setup.exe"
+            },
+            {
+              "name": "FOL-discord_0.2.6_x64-setup.exe",
+              "browser_download_url": "https://github.com/schacal/FOL-discord/releases/download/v0.2.6/FOL-discord_0.2.6_x64-setup.exe"
+            }
+          ]
+        }"#;
+        let fora_da_release = r#"{
+          "tag_name": "v0.2.6",
+          "draft": false,
+          "prerelease": false,
+          "assets": [{
+            "name": "FOL-discord-setup.exe",
+            "browser_download_url": "https://example.invalid/FOL-discord-setup.exe"
+          }]
+        }"#;
+
+        let atualizacao = atualizacao_da_release(com_os_dois, "0.2.5").unwrap();
+        assert_eq!(
+            atualizacao.url,
+            "https://github.com/schacal/FOL-discord/releases/download/v0.2.6/FOL-discord_0.2.6_x64-setup.exe"
+        );
+        assert!(atualizacao_da_release(fora_da_release, "0.2.5").is_none());
     }
 
     #[test]
