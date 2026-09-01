@@ -108,7 +108,7 @@ export const servicoSimulado: Servico = {
     if (mundo.cenario === "parado") throw new Error("serviço não está rodando");
     const operacional = estadoAtual() === "operacional";
     return {
-      versao: "0.2.3",
+      versao: "0.2.4",
       estado: estadoAtual(),
       autostart: mundo.autostart,
       pac_ligado: true,

@@ -82,10 +82,19 @@ Uma VPN, um antivírus com "proteção de rede" ou outro programa de proxy podem
 ## O serviço não sobe sozinho no boot
 
 ```powershell
-Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name FolDiscord
+schtasks /query /tn FolDiscord.Bandeja /fo list /v
+Get-Process fol-discord-janela, fol-discord -ErrorAction SilentlyContinue
 ```
 
-Se não existir, rode `instalar` de novo. Se existir e mesmo assim não subir, algum otimizador de inicialização pode estar bloqueando entradas do `Run`.
+Se a tarefa estiver ausente, abra o setup instalado e ligue **Iniciar com o PC**.
+No boot normal a janela não aparece: o esperado é o ícone âmbar **FOL-discord —
+preparando**, que troca para o estado real quando o serviço responde.
+
+Se há a tarefa e `fol-discord-janela.exe`, mas ainda não há `fol-discord.exe`,
+o serviço ainda está preparando proxies. Se o Discord foi aberto antes de um
+proxy estar pronto, feche e abra o Discord uma vez depois de o ícone deixar de
+mostrar preparação. Não edite chaves de atraso do Explorer, prioridade de
+processo ou valores aleatórios do Registro para tentar contornar isso.
 
 ## O Discord pediu verificação de e-mail ou telefone
 
@@ -97,7 +106,45 @@ Binários Rust novos e sem assinatura de código costumam ser sinalizados por he
 
 - compilar você mesmo com `cargo build --release` e comparar;
 - conferir que o binário do *Release* saiu do GitHub Actions, cujo log de execução é público;
-- ler o código — são cerca de 700 linhas.
+- ler o código — são cerca de 1.200 linhas no serviço.
+
+## A janela não abre
+
+Abra o `fol-discord-janela.exe` distribuído com o projeto ou a release. Ele já
+leva o serviço dentro; não precisa abrir PowerShell antes. Se não subir, estas
+são as causas mais prováveis, nessa ordem.
+
+**Falta o WebView2.** A janela usa o WebView2, que já vem no Windows 11 e na maioria dos Windows 10 atuais. Se ele faltar, instale o *Evergreen Bootstrapper* da Microsoft — a instalação por usuário não pede administrador.
+
+**O serviço não está rodando.** A janela abre mesmo assim, no estado **Parado**.
+Clique em **Verificar agora**; ele inicia uma única cópia do serviço e atualiza
+o estado. Se não religar, confira se o executável do serviço está no lugar:
+
+```powershell
+Get-ChildItem "$env:LOCALAPPDATA\FolDiscord"
+```
+
+**A janela já está aberta, escondida na bandeja.** Fechar esconde, não encerra — é assim de propósito. Procure o ícone perto do relógio; ele carrega a cor do estado. Abrir uma segunda vez traz a primeira para a frente em vez de abrir outra.
+
+Para sair de verdade, use **Sair (o serviço continua)** no menu da bandeja. Como o rótulo diz, isso fecha só a janela: a correção continua valendo.
+
+**Janelas pretas aparecem na instalação ou remoção.** Use a versão mais nova
+de `fol-discord-janela.exe`. Os processos auxiliares da janela e do serviço são
+criados sem console; não deve aparecer CMD durante Instalar, Reiniciar Discord,
+Verificar agora ou Desinstalar.
+
+## O WSL avisou que o proxy do host mudou
+
+Ao ligar ou desligar o PAC, o Windows muda a configuração de proxy do usuário.
+Se o WSL estiver configurado para herdar esse proxy, ele pode mostrar um aviso
+pedindo para reiniciar o WSL. Isso é esperado e não impede o FOL-discord de
+funcionar.
+
+Não é preciso fazer nada para o Discord. Se você usa WSL e quer que ele aplique
+a mudança imediatamente, rode `wsl --shutdown` e abra sua distribuição de novo.
+Se preferir que o WSL nunca herde proxies do Windows, desative `autoProxy` na
+configuração global do WSL — essa escolha afeta todas as distribuições Linux,
+não só este programa.
 
 ## Remover tudo
 

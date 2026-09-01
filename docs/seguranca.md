@@ -44,22 +44,48 @@ Isso não aconteceu nos testes, mas é possível. Se o Discord pedir confirmaç�
 
 ## O que fica no seu computador
 
-Duas marcas, ambas em `HKCU`, ambas sem administrador, ambas reversíveis:
+As alterações do FOL são por usuário, sem administrador e reversíveis:
 
 | O quê | Onde | Na desinstalação |
 | --- | --- | --- |
 | Proxy automático | `HKCU\...\Internet Settings\AutoConfigURL` | volta ao valor anterior, que é guardado antes de trocar |
-| Autostart | `HKCU\...\CurrentVersion\Run\FolDiscord` | removido |
+| Autostart da interface | `Task Scheduler\FolDiscord.Bandeja` | removido somente se a ação for a interface instalada do FOL |
+| Run legado do CLI | `HKCU\...\CurrentVersion\Run\FolDiscord` | removido somente quando aponta exatamente para o serviço do FOL |
 | Entrada no PATH | `HKCU\Environment\Path` | só a nossa entrada é retirada |
 | Executável e log | `%LOCALAPPDATA%\FolDiscord\` | pasta apagada |
 
 O PATH é lido e gravado como valor bruto, preservando o tipo `REG_EXPAND_SZ`. Isso importa: reescrevê-lo como texto simples congelaria variáveis como `%USERPROFILE%\bin` que já estivessem lá, quebrando o PATH de quem instalou.
 
-Nada é escrito em `HKLM`, em `Arquivos de Programas` ou no diretório do Discord. **Nenhum arquivo do Discord é modificado** — nem `settings.json`, nem atalhos, nem os binários. Por isso atualizações do Discord não quebram nada e não há o que restaurar.
+Nada é escrito em `HKLM`, em `Arquivos de Programas` ou no diretório do Discord. A tarefa da bandeja é interativa, limitada e só existe após o logon; ela não usa SYSTEM, elevação ou UAC. **Nenhum arquivo do Discord é modificado** — nem `settings.json`, nem atalhos, nem os binários. Por isso atualizações do Discord não quebram nada e não há o que restaurar.
 
 ## As portas locais não estão expostas
 
-Os dois servidores escutam em `127.0.0.1` — não em `0.0.0.0`. Ninguém na sua rede local, e muito menos na internet, alcança as portas 9250 ou 9251. Só programas rodando na sua própria máquina, que de todo modo já poderiam abrir conexões por conta própria.
+Os servidores escutam em `127.0.0.1` — não em `0.0.0.0`. Ninguém na sua rede local, e muito menos na internet, alcança as portas 9250 ou 9251. Só programas rodando na sua própria máquina, que de todo modo já poderiam abrir conexões por conta própria.
+
+| Porta | O quê |
+| --- | --- |
+| 9250 | o proxy SOCKS5 local |
+| 9251 | o arquivo PAC que o Windows lê |
+
+A janela não abre uma terceira porta: ela conversa com o processo Tauri pelo IPC
+local do próprio aplicativo. Não há API HTTP de controle em `127.0.0.1:9252`.
+
+## A janela não é uma porta de saída
+
+A janela distribuída é um WebView2 com **política de conteúdo restrita**. Ela
+não se conecta a uma API HTTP local: usa apenas IPC do Tauri para pedir ações
+ao processo nativo. Fonte, scripts, imagens e a cópia do serviço já vêm no
+executável.
+
+Duas consequências que valem dizer em voz alta:
+
+- **A janela não busca atualização nem telemetria.** Qualquer navegação externa
+  só acontece quando a pessoa clica no link público do projeto.
+- **A janela usa uma ponte nativa local.** Essa ponte lê o estado do registro e
+  as linhas de rota do `fol.log`, e aplica as ações da interface. Nada desse
+  conteúdo sai do computador.
+
+As dependências de terceiros dela são poucas e todas MIT, e o `.exe` publicado sai do GitHub Actions como o do serviço.
 
 ## O que o programa não faz
 
@@ -72,7 +98,7 @@ Os dois servidores escutam em `127.0.0.1` — não em `0.0.0.0`. Ninguém na sua
 
 ## Verificando por conta própria
 
-O código é curto o bastante para ser lido inteiro — cerca de 700 linhas em seis arquivos. Os pontos que valem conferir:
+O código é curto o bastante para ser lido inteiro — cerca de 1.200 linhas em sete arquivos no serviço. Os pontos que valem conferir:
 
 | O que verificar | Onde |
 | --- | --- |
@@ -80,6 +106,8 @@ O código é curto o bastante para ser lido inteiro — cerca de 700 linhas em s
 | Que as portas escutam só em `127.0.0.1` | [`src/socks.rs`](../src/socks.rs), [`src/pac.rs`](../src/pac.rs) |
 | Que nada além do PAC e do autostart é escrito | [`src/windows.rs`](../src/windows.rs) |
 | Que nenhum certificado é instalado | qualquer arquivo — não existe esse código |
+| Que a janela não abre API HTTP de controle | [`interface/src-tauri/src/servico.rs`](../interface/src-tauri/src/servico.rs) e [`interface/src/api/tauri.ts`](../interface/src/api/tauri.ts) |
+| Que a janela não pede nada além do necessário | [`interface/src-tauri/capabilities/default.json`](../interface/src-tauri/capabilities/default.json) |
 
 Para ver ao vivo por onde cada conexão saiu:
 
