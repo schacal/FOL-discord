@@ -38,8 +38,10 @@
 Depois disso ele se vira sozinho: a cada reinício do PC, a cada abertura do
 Discord, e nas reconexões durante o uso.
 
-> **Aviso do SmartScreen na primeira vez?** É esperado — o instalador não tem
-> assinatura paga. Clique em **Mais informações** → **Executar assim mesmo**.
+> **Aviso do SmartScreen na primeira vez?** Uma versão assinada ainda pode ser
+> tratada como pouco conhecida enquanto a reputação se acumula. Se aparecer
+> **Editor desconhecido**, é uma versão antiga sem assinatura; confirme que o
+> arquivo veio deste repositório antes de escolher **Executar assim mesmo**.
 
 **Não precisa** de administrador, VPN, conta, Python ou .NET.
 

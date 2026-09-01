@@ -32,11 +32,113 @@ jobs:
       - name: Testes do serviço
         run: cargo test --release
 
-      - name: Build do instalador
+      # A assinatura só acontece em tags de release. Pull requests continuam
+      # compilando e testando sem receber acesso às credenciais do Azure.
+      - name: Compilar núcleo para assinatura
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: cargo build --release --locked
+
+      - name: Instalar ferramenta de assinatura
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: cargo install artifact-signing-cli --version 0.11.0 --locked
+
+      # O núcleo precisa estar assinado antes de o build.rs embuti-lo na janela.
+      - name: Assinar o núcleo antes de embutir
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          AZURE_ARTIFACT_SIGNING_PROFILE: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+        run: |
+          $variaveisObrigatorias = @(
+            'AZURE_CLIENT_ID',
+            'AZURE_CLIENT_SECRET',
+            'AZURE_TENANT_ID',
+            'AZURE_ARTIFACT_SIGNING_ENDPOINT',
+            'AZURE_ARTIFACT_SIGNING_ACCOUNT',
+            'AZURE_ARTIFACT_SIGNING_PROFILE'
+          )
+          foreach ($nome in $variaveisObrigatorias) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($nome))) {
+              throw "configure $nome nos Secrets ou Variables do repositorio"
+            }
+          }
+
+          $nucleo = Join-Path $env:GITHUB_WORKSPACE 'target\release\fol-discord.exe'
+          & artifact-signing-cli `
+            -e $env:AZURE_ARTIFACT_SIGNING_ENDPOINT `
+            -a $env:AZURE_ARTIFACT_SIGNING_ACCOUNT `
+            -c $env:AZURE_ARTIFACT_SIGNING_PROFILE `
+            -d 'FOL-discord' `
+            $nucleo
+          if ($LASTEXITCODE -ne 0) { throw 'falha ao assinar o nucleo' }
+
+      # O Tauri altera a janela ao iniciar o bundle. O signCommand é executado
+      # depois desse patch e também assina o setup NSIS final.
+      - name: Preparar assinatura do empacotador
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          AZURE_ARTIFACT_SIGNING_PROFILE: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+        run: |
+          $comando = @{
+            cmd = 'artifact-signing-cli'
+            args = @(
+              '-e', $env:AZURE_ARTIFACT_SIGNING_ENDPOINT,
+              '-a', $env:AZURE_ARTIFACT_SIGNING_ACCOUNT,
+              '-c', $env:AZURE_ARTIFACT_SIGNING_PROFILE,
+              '-d', 'FOL-discord',
+              '%1'
+            )
+          }
+          $configuracao = @{ bundle = @{ windows = @{ signCommand = $comando } } }
+          $destino = Join-Path $env:GITHUB_WORKSPACE 'interface\src-tauri\tauri.signing.conf.json'
+          $configuracao | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $destino -Encoding utf8
+
+      - name: Build do instalador sem assinatura
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: npm --prefix interface run tauri -- build --bundles nsis
+
+      - name: Build do instalador assinado
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          FOL_DISCORD_PREBUILT_CORE: '1'
+        run: npm --prefix interface run tauri -- build --bundles nsis --config src-tauri/tauri.signing.conf.json
 
       - name: Testes da embalagem
         run: npm --prefix interface test
+
+      - name: Verificar assinaturas dos artefatos
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $pastaNsis = Join-Path $env:GITHUB_WORKSPACE 'interface\src-tauri\target\release\bundle\nsis'
+          $setup = Get-ChildItem -Path $pastaNsis -Filter '*-setup.exe' -File |
+            Select-Object -First 1
+          if (-not $setup) { throw 'o build nao gerou o instalador NSIS' }
+
+          $arquivos = @(
+            (Join-Path $env:GITHUB_WORKSPACE 'target\release\fol-discord.exe'),
+            (Join-Path $env:GITHUB_WORKSPACE 'interface\src-tauri\target\release\fol-discord-janela.exe'),
+            $setup.FullName
+          )
+
+          foreach ($arquivo in $arquivos) {
+            $assinatura = Get-AuthenticodeSignature -LiteralPath $arquivo
+            if ($assinatura.Status -ne 'Valid') {
+              throw "assinatura invalida em $arquivo (status: $($assinatura.Status))"
+            }
+            Write-Host "Assinatura valida: $arquivo"
+          }
 
       - name: Publicar setup
         uses: actions/upload-artifact@v4

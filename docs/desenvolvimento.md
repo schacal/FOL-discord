@@ -99,3 +99,34 @@ instalador publicado nunca é enviado da máquina de ninguém.
 git tag -a v0.2.5 -m "v0.2.5"
 git push origin v0.2.5
 ```
+
+### Assinatura do instalador
+
+Tags `v*` só publicam o instalador depois que o núcleo, a janela e o setup NSIS
+passam pela assinatura do Microsoft Artifact Signing. Pull requests e builds da
+branch `main` continuam compilando sem assinar, porque não recebem acesso às
+credenciais do Azure.
+
+Configure no repositório do GitHub:
+
+- **Secrets:** `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` e `AZURE_TENANT_ID`.
+- **Variables:** `AZURE_ARTIFACT_SIGNING_ENDPOINT`,
+  `AZURE_ARTIFACT_SIGNING_ACCOUNT` e `AZURE_ARTIFACT_SIGNING_PROFILE`.
+
+Sem esses seis valores, uma tag de release falha antes de publicar qualquer
+arquivo.
+
+A identidade do Azure precisa ser uma App Registration dedicada, com um segredo
+de cliente guardado somente nos Secrets do GitHub e a função
+`Artifact Signing Certificate Profile Signer` no perfil de certificado. O
+perfil deve estar validado para confiança pública. A chave privada do
+certificado nunca é guardada no repositório nem entregue ao workflow.
+
+O workflow instala o `artifact-signing-cli` apenas em tags, assina o núcleo antes
+de embuti-lo e entrega ao `signCommand` do Tauri a assinatura da janela depois
+do patch do bundle e do setup NSIS final. Qualquer assinatura ausente ou inválida
+interrompe a publicação. Consulte a [configuração oficial do Artifact
+Signing](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart) e
+a [assinatura para Windows no
+Tauri](https://v2.tauri.app/distribute/sign/windows/#azure-artifact-signing) para
+criar a conta, validar a identidade e limitar as permissões da App Registration.

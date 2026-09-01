@@ -16,6 +16,7 @@ const inicializacao = new URL("../src-tauri/src/inicializacao.rs", import.meta.u
 const cicloDeVida = new URL("../src-tauri/src/main.rs", import.meta.url);
 const configuracaoTauri = new URL("../src-tauri/tauri.conf.json", import.meta.url);
 const hooksNsis = new URL("../src-tauri/windows/hooks.nsh", import.meta.url);
+const releaseWorkflow = new URL("../../.github/workflows/release.yml", import.meta.url);
 const nucleo = new URL("../../src/main.rs", import.meta.url);
 const controleDiscord = new URL("../../src/discord.rs", import.meta.url);
 const tela = new URL("../src/App.tsx", import.meta.url);
@@ -312,4 +313,47 @@ test("a embalagem produz exatamente um setup para download", async () => {
   );
 
   assert.equal(setups.length, 1, "a embalagem deve conter um único *-setup.exe");
+});
+
+test("a release pública assina pelo empacotador e verifica os artefatos", async () => {
+  const workflow = await readFile(releaseWorkflow, "utf8");
+  const compilarNucleo = workflow.indexOf("- name: Compilar núcleo para assinatura");
+  const assinarNucleo = workflow.indexOf("- name: Assinar o núcleo antes de embutir");
+  const prepararAssinatura = workflow.indexOf("- name: Preparar assinatura do empacotador");
+  const buildAssinado = workflow.indexOf("- name: Build do instalador assinado");
+  const testesEmbalagem = workflow.indexOf("- name: Testes da embalagem");
+  const verificarAssinaturas = workflow.indexOf("- name: Verificar assinaturas dos artefatos");
+  const publicarSetup = workflow.indexOf("- name: Publicar setup");
+  const publicarRelease = workflow.indexOf("- name: Publicar release");
+
+  assert.match(workflow, /cargo install artifact-signing-cli --version 0\.11\.0 --locked/);
+  assert.match(workflow, /cargo build --release --locked/);
+  assert.match(workflow, /AZURE_CLIENT_SECRET/);
+  assert.match(workflow, /signCommand/);
+  assert.match(workflow, /artifact-signing-cli/);
+  assert.match(workflow, /["']%1["']/);
+  assert.doesNotMatch(workflow, /azure\/artifact-signing-action/);
+  assert.doesNotMatch(workflow, /build --no-bundle|tauri -- bundle/);
+  assert.match(workflow, /Get-AuthenticodeSignature/);
+  assert.match(workflow, /Status\s+-ne\s+["']Valid["']/);
+
+  assert.ok(
+    compilarNucleo < assinarNucleo &&
+      assinarNucleo < prepararAssinatura &&
+      prepararAssinatura < buildAssinado &&
+      buildAssinado < testesEmbalagem &&
+      testesEmbalagem < verificarAssinaturas &&
+      verificarAssinaturas < publicarSetup &&
+      publicarSetup < publicarRelease,
+    "a release deve compilar, assinar, empacotar, verificar e só então publicar",
+  );
+
+  const blocoBuildAssinado = workflow.slice(buildAssinado, testesEmbalagem);
+  assert.match(blocoBuildAssinado, /--config src-tauri\/tauri\.signing\.conf\.json/);
+  assert.match(blocoBuildAssinado, /FOL_DISCORD_PREBUILT_CORE:\s*['"]?1/);
+
+  const blocoVerificacao = workflow.slice(verificarAssinaturas, publicarSetup);
+  assert.ok(blocoVerificacao.includes("target\\release\\fol-discord.exe"));
+  assert.ok(blocoVerificacao.includes("fol-discord-janela.exe"));
+  assert.ok(blocoVerificacao.includes("Filter '*-setup.exe'"));
 });
