@@ -20,21 +20,41 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Testes
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: interface/package-lock.json
+
+      - name: Dependências da interface
+        run: npm ci --prefix interface
+
+      - name: Testes do serviço
         run: cargo test --release
 
-      - name: Compilar
-        run: cargo build --release
+      - name: Build do instalador
+        run: npm --prefix interface run tauri -- build --bundles nsis
 
-      - name: Publicar artefato
+      - name: Testes da embalagem
+        run: npm --prefix interface test
+
+      - name: Publicar setup
         uses: actions/upload-artifact@v4
         with:
-          name: fol-discord
+          name: fol-discord-setup
+          path: interface/src-tauri/target/release/bundle/nsis/*-setup.exe
+
+      - name: Publicar CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: fol-discord-cli
           path: target/release/fol-discord.exe
 
       - name: Publicar release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/fol-discord.exe
+          files: |
+            interface/src-tauri/target/release/bundle/nsis/*-setup.exe
+            target/release/fol-discord.exe
           generate_release_notes: true
