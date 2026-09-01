@@ -12,11 +12,16 @@ const janela = new URL(
 const ponteNativa = new URL("../src-tauri/src/servico.rs", import.meta.url);
 const inicializacao = new URL("../src-tauri/src/inicializacao.rs", import.meta.url);
 const cicloDeVida = new URL("../src-tauri/src/main.rs", import.meta.url);
+const configuracaoTauri = new URL("../src-tauri/tauri.conf.json", import.meta.url);
+const hooksNsis = new URL("../src-tauri/windows/hooks.nsh", import.meta.url);
 const nucleo = new URL("../../src/main.rs", import.meta.url);
 const controleDiscord = new URL("../../src/discord.rs", import.meta.url);
 const tela = new URL("../src/App.tsx", import.meta.url);
 const pastaDeBuild = fileURLToPath(
   new URL("../src-tauri/target/release/build/", import.meta.url),
+);
+const pastaNsis = fileURLToPath(
+  new URL("../src-tauri/target/release/bundle/nsis/", import.meta.url),
 );
 
 async function servicoQueFoiEmbutido() {
@@ -157,4 +162,29 @@ test("o boot cria a bandeja sem mostrar a janela nem recriar o Run legado", asyn
     /comando_desinstalador\(\)/,
     "a interface instalada deve usar o desinstalador NSIS",
   );
+});
+
+test("o setup NSIS permanece por usuário e preserva a limpeza do núcleo", async () => {
+  const [configuracaoTexto, hooks] = await Promise.all([
+    readFile(configuracaoTauri, "utf8"),
+    readFile(hooksNsis, "utf8"),
+  ]);
+  const configuracao = JSON.parse(configuracaoTexto);
+
+  assert.equal(configuracao.bundle.active, true);
+  assert.deepEqual(configuracao.bundle.targets, ["nsis"]);
+  assert.equal(configuracao.bundle.windows.nsis.installMode, "currentUser");
+  assert.equal(configuracao.bundle.windows.webviewInstallMode.type, "downloadBootstrapper");
+  assert.match(hooks, /NSIS_HOOK_POSTINSTALL/);
+  assert.match(hooks, /NSIS_HOOK_PREUNINSTALL/);
+  assert.match(hooks, /desinstalar --manter-arquivos/);
+});
+
+test("a embalagem produz exatamente um setup para download", async () => {
+  const arquivos = await readdir(pastaNsis, { withFileTypes: true });
+  const setups = arquivos.filter(
+    (arquivo) => arquivo.isFile() && /-setup\.exe$/i.test(arquivo.name),
+  );
+
+  assert.equal(setups.length, 1, "a embalagem deve conter um único *-setup.exe");
 });
