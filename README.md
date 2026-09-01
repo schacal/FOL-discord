@@ -3,33 +3,53 @@
 </p>
 
 <p align="center">
-  Devolve a <b>transmissão de tela</b> e a <b>câmera</b> do Discord no Brasil.<br>
+  <b>Devolve a transmissão de tela e a câmera do Discord no Brasil.</b><br>
   Sem VPN, sem conta, sem mensalidade, sem administrador, sem perder ping. Instala e esquece.
 </p>
 
 <p align="center">
-  <a href="https://github.com/schacal/FOL-discord/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/schacal/FOL-discord?style=flat-square"></a>
-  <a href="https://github.com/schacal/FOL-discord/actions"><img alt="build" src="https://img.shields.io/github/actions/workflow/status/schacal/FOL-discord/release.yml?style=flat-square"></a>
+  <a href="https://github.com/schacal/FOL-discord/releases/latest">
+    <img alt="Baixar para Windows" src="https://img.shields.io/badge/Baixar%20para%20Windows-instalador%20.exe-2ea44f?style=for-the-badge&logo=windows&logoColor=white">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/schacal/FOL-discord/releases/latest"><img alt="versão" src="https://img.shields.io/github/v/release/schacal/FOL-discord?style=flat-square&label=vers%C3%A3o"></a>
+  <a href="https://github.com/schacal/FOL-discord/actions"><img alt="build" src="https://img.shields.io/github/actions/workflow/status/schacal/FOL-discord/release.yml?style=flat-square&label=build"></a>
+  <img alt="plataforma" src="https://img.shields.io/badge/Windows-10%20e%2011-0078d4?style=flat-square">
   <img alt="tamanho" src="https://img.shields.io/badge/tamanho-5.5%20MB-blue?style=flat-square">
   <img alt="licença" src="https://img.shields.io/badge/licen%C3%A7a-MIT-green?style=flat-square">
 </p>
 
----
-
-## Demonstração
+<p align="center">
+  <a href="#instalar">Instalar</a> ·
+  <a href="#a-janela">A janela</a> ·
+  <a href="#comandos">Comandos</a> ·
+  <a href="docs/como-funciona.md">Como funciona</a> ·
+  <a href="docs/seguranca.md">Segurança</a> ·
+  <a href="docs/problemas.md">Problemas</a>
+</p>
 
 <p align="center">
   <img src="assets/demo.gif" alt="Janela do FOL-discord alternando entre os estados de funcionamento e pausa" width="760">
 </p>
 
-Uma prévia curta da janela de gerenciamento: ela mostra quando a correção está ativa, permite pausar sem mexer na instalação e deixa claro quais conexões saem pelo exterior.
+<p align="center">
+  <i>A janela de gerenciamento: mostra quando a correção está ativa, deixa pausar sem<br>
+  mexer na instalação e diz quais conexões saem pelo exterior.</i>
+</p>
+
+---
 
 ## Instalar
 
-### Pelo aplicativo do Windows
+### Jeito fácil — instalador do Windows
 
-Baixe e abra `FOL-discord_0.2.4_x64-setup.exe`. É um setup por usuário: não
-pede administrador, instala a interface e o serviço no seu perfil, abre a
+1. [**Baixe o instalador**](https://github.com/schacal/FOL-discord/releases/latest) na página de releases — o arquivo `FOL-discord_x.y.z_x64-setup.exe`.
+2. Abra o arquivo e siga o instalador.
+3. Pronto. A janela abre sozinha e a correção já está ligada.
+
+Não pede administrador: instala a interface e o serviço no seu perfil, abre a
 janela normal uma vez e registra a desinstalação no Windows. Ele usa o runtime
 normal do WebView2; só baixa o bootstrapper da Microsoft se ele não existir.
 
@@ -40,7 +60,7 @@ serviço sem reiniciar o Discord.
 Fechar a janela só a esconde na bandeja; a correção continua em execução. Use
 **Desinstalar** dentro dela para remover tudo de forma guiada.
 
-### Pelo PowerShell
+### Jeito rápido — uma linha no PowerShell
 
 Abra o **PowerShell** e cole:
 
@@ -48,15 +68,21 @@ Abra o **PowerShell** e cole:
 irm https://raw.githubusercontent.com/schacal/FOL-discord/main/install.ps1 | iex
 ```
 
-Esse é o caminho avançado de serviço por linha de comando. Ele mantém o
-autostart legado em `Run`; para a experiência completa de janela, bandeja e
-desinstalação pelo Windows, prefira o setup.
+Esse é o caminho avançado, só de serviço por linha de comando. Ele baixa o
+executável mais recente, instala em `%LOCALAPPDATA%\FolDiscord` e mantém o
+autostart legado em `Run`. Para a experiência completa de janela, bandeja e
+desinstalação pelo Windows, prefira o instalador acima.
 
 A partir daí funciona por conta própria — em todo reinício do PC, em toda abertura do Discord, e nas reconexões que ele faz sozinho no meio do uso. Até você desinstalar.
 
 **Não precisa** de administrador, VPN, conta, Python, .NET ou qualquer outra instalação.
 
 ## Desinstalar
+
+Pelo instalador: use o botão **Desinstalar** dentro da janela, ou remova
+**FOL-discord** em *Aplicativos instalados* do Windows.
+
+Pela linha de comando:
 
 ```powershell
 fol-discord desinstalar
@@ -188,7 +214,7 @@ npm --prefix interface install
 npm --prefix interface run dev
 ```
 
-Isso abre a janela no navegador, no tamanho real, falando com um serviço simulado — dá para ver e testar os quatro estados sem Rust e sem proxy nenhum. Para compilar o aplicativo de verdade, `npm --prefix interface run tauri build`.
+Isso abre a janela no navegador, no tamanho real, falando com um serviço simulado — dá para ver e testar os quatro estados sem Rust e sem proxy nenhum. Para compilar o instalador de verdade, `npm --prefix interface run tauri build`.
 
 ## Por que FOL?
 
