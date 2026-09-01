@@ -29,7 +29,7 @@ import { BarraDeTeste } from "./componentes/BarraDeTeste";
 import { TintasDeOrbe } from "./componentes/Orbe";
 
 /** Enquanto o serviço não responde, é a versão que a janela assume. */
-const VERSAO_PADRAO = "0.2.6";
+const VERSAO_PADRAO = "0.2.7";
 const INTERVALO_MS = 2000;
 /** Quanto tempo o resultado de uma ação fica no bloco de status. */
 const AVISO_MS = 7000;
