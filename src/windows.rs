@@ -2,7 +2,7 @@
 //! autostart. Ambas em HKCU, sem administrador, e ambas removíveis.
 
 use anyhow::{Context, Result};
-use winreg::{enums::*, RegKey};
+use winreg::{enums::*, RegKey, RegValue};
 
 const CHAVE_INTERNET: &str = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
 const CHAVE_RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -70,4 +70,122 @@ pub fn autostart_ativo() -> bool {
         .open_subkey(CHAVE_RUN)
         .and_then(|k| k.get_value::<String, _>(NOME_RUN))
         .is_ok()
+}
+
+// --- PATH do usuário -------------------------------------------------------
+//
+// O PATH costuma ser `REG_EXPAND_SZ` e conter coisas como `%USERPROFILE%\bin`.
+// Reescrevê-lo como `REG_SZ` congelaria essas variáveis e quebraria o PATH de
+// quem instalou. Por isso lemos e gravamos o valor bruto, preservando o tipo.
+
+const CHAVE_ENV: &str = "Environment";
+
+fn utf16_para_texto(v: &RegValue) -> String {
+    let u: Vec<u16> = v
+        .bytes
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .take_while(|&c| c != 0)
+        .collect();
+    String::from_utf16_lossy(&u)
+}
+
+fn texto_para_utf16(s: &str) -> Vec<u8> {
+    s.encode_utf16()
+        .chain(std::iter::once(0))
+        .flat_map(|c| c.to_le_bytes())
+        .collect()
+}
+
+pub fn adicionar_ao_path(dir: &str) -> Result<()> {
+    let (k, _) = hkcu().create_subkey(CHAVE_ENV).context("abrindo Environment")?;
+
+    let (atual, vtype) = match k.get_raw_value("Path") {
+        Ok(v) => (utf16_para_texto(&v), v.vtype),
+        Err(_) => (String::new(), REG_EXPAND_SZ),
+    };
+
+    if esta_no_path(&atual, dir) {
+        return Ok(());
+    }
+
+    let mut novo = atual;
+    if !novo.is_empty() && !novo.ends_with(';') {
+        novo.push(';');
+    }
+    novo.push_str(dir);
+
+    k.set_raw_value(
+        "Path",
+        &RegValue {
+            bytes: texto_para_utf16(&novo),
+            vtype,
+        },
+    )?;
+    Ok(())
+}
+
+pub fn remover_do_path(dir: &str) -> Result<()> {
+    let Ok(k) = hkcu().open_subkey_with_flags(CHAVE_ENV, KEY_ALL_ACCESS) else {
+        return Ok(());
+    };
+    let Ok(v) = k.get_raw_value("Path") else {
+        return Ok(());
+    };
+
+    let atual = utf16_para_texto(&v);
+    let novo: Vec<&str> = atual
+        .split(';')
+        .filter(|p| !p.trim().eq_ignore_ascii_case(dir.trim_end_matches('\\')))
+        .filter(|p| !p.trim().eq_ignore_ascii_case(dir))
+        .collect();
+    let novo = novo.join(";");
+
+    if novo != atual {
+        k.set_raw_value(
+            "Path",
+            &RegValue {
+                bytes: texto_para_utf16(&novo),
+                vtype: v.vtype,
+            },
+        )?;
+    }
+    Ok(())
+}
+
+pub fn path_ativo(dir: &str) -> bool {
+    hkcu()
+        .open_subkey(CHAVE_ENV)
+        .and_then(|k| k.get_raw_value("Path"))
+        .map(|v| esta_no_path(&utf16_para_texto(&v), dir))
+        .unwrap_or(false)
+}
+
+fn esta_no_path(path: &str, dir: &str) -> bool {
+    let alvo = dir.trim_end_matches('\\');
+    path.split(';')
+        .any(|p| p.trim().trim_end_matches('\\').eq_ignore_ascii_case(alvo))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reconhece_entrada_ja_presente() {
+        let p = r"C:\Windows;C:\Users\x\AppData\Local\FolDiscord;C:\outro";
+        assert!(esta_no_path(p, r"C:\Users\x\AppData\Local\FolDiscord"));
+        assert!(esta_no_path(p, r"C:\Users\x\AppData\Local\FolDiscord\"));
+        assert!(!esta_no_path(p, r"C:\Users\x\AppData\Local\Outro"));
+    }
+
+    #[test]
+    fn ida_e_volta_preserva_o_texto() {
+        let s = r"C:\Windows;%USERPROFILE%\bin";
+        let v = RegValue {
+            bytes: texto_para_utf16(s),
+            vtype: REG_EXPAND_SZ,
+        };
+        assert_eq!(utf16_para_texto(&v), s);
+    }
 }

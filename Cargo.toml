@@ -1,6 +1,6 @@
 [package]
 name = "fol-discord"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Corrige o problema do Discord no Brasil fazendo o handshake sair por um IP estrangeiro"
 license = "MIT"

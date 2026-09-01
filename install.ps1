@@ -35,12 +35,16 @@ try {
 Write-Host "[2/3] Baixando..."
 Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
 
-Write-Host "[3/3] Ligando a correcao..."
+Write-Host "[3/3] Ligando a correcao e reiniciando o Discord..."
 & $exe instalar
 
+# Deixa o comando disponivel ja nesta janela; em terminais novos o PATH do
+# usuario, que o instalador atualizou, resolve sozinho.
+if ($env:PATH -notlike "*$destino*") { $env:PATH = "$env:PATH;$destino" }
+
 Write-Host ""
-Write-Host "Pronto. Feche e abra o Discord uma vez." -ForegroundColor Green
+Write-Host "Pronto." -ForegroundColor Green
 Write-Host ""
-Write-Host "  Ver estado:   & '$exe' status"
-Write-Host "  Desinstalar:  & '$exe' desinstalar"
+Write-Host "  Ver estado:   fol-discord status"
+Write-Host "  Desinstalar:  fol-discord desinstalar"
 Write-Host ""

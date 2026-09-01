@@ -3,10 +3,27 @@
 Antes de qualquer coisa, veja o estado:
 
 ```powershell
+fol-discord status
+```
+
+O esperado é `sim` em todas as linhas. Cada `não` aponta para uma seção abaixo.
+
+## `fol-discord não é reconhecido como nome de cmdlet`
+
+O terminal que você está usando foi aberto **antes** da instalação e ainda carrega o PATH antigo. Duas saídas:
+
+- **abra uma janela nova** do PowerShell — a mais simples;
+- ou use o caminho completo, que funciona em qualquer janela:
+
+```powershell
 & "$env:LOCALAPPDATA\FolDiscord\fol-discord.exe" status
 ```
 
-O esperado é `sim` nas quatro linhas. Cada `não` aponta para uma seção abaixo.
+Se o caminho completo também falhar dizendo que não encontrou o arquivo, então a instalação não chegou a acontecer. Rode:
+
+```powershell
+irm https://raw.githubusercontent.com/schacal/FOL-discord/main/install.ps1 | iex
+```
 
 ## A transmissão de tela continua quebrada
 
@@ -21,8 +38,8 @@ Get-Content "$env:LOCALAPPDATA\FolDiscord\fol.log" -Tail 30
 **Se aparecem linhas `exterior discord.com:443`** — o encaminhamento está funcionando e o problema é outro. Vale tentar a rede de segurança, que manda todo domínio do Discord por fora:
 
 ```powershell
-& "$env:LOCALAPPDATA\FolDiscord\fol-discord.exe" desinstalar
-& "$env:LOCALAPPDATA\FolDiscord\fol-discord.exe" instalar --tudo-discord
+fol-discord desinstalar
+fol-discord instalar --tudo-discord
 ```
 
 **Se aparece `exterior indisponível`** — a piscina secou. Veja a seção seguinte.
@@ -39,7 +56,7 @@ Se persistir por muito tempo, reinicie o serviço:
 
 ```powershell
 taskkill /F /IM fol-discord.exe
-& "$env:LOCALAPPDATA\FolDiscord\fol-discord.exe" instalar
+fol-discord instalar
 ```
 
 ## O Discord ignora o proxy
@@ -85,7 +102,7 @@ Binários Rust novos e sem assinatura de código costumam ser sinalizados por he
 ## Remover tudo
 
 ```powershell
-& "$env:LOCALAPPDATA\FolDiscord\fol-discord.exe" desinstalar
+fol-discord desinstalar
 ```
 
 Devolve o `AutoConfigURL` ao valor anterior, remove o autostart e apaga a pasta. Feche e abra o Discord depois. Nenhum arquivo do Discord foi tocado em momento nenhum, então não há mais nada a restaurar.

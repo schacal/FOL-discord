@@ -50,7 +50,10 @@ Duas marcas, ambas em `HKCU`, ambas sem administrador, ambas reversíveis:
 | --- | --- | --- |
 | Proxy automático | `HKCU\...\Internet Settings\AutoConfigURL` | volta ao valor anterior, que é guardado antes de trocar |
 | Autostart | `HKCU\...\CurrentVersion\Run\FolDiscord` | removido |
+| Entrada no PATH | `HKCU\Environment\Path` | só a nossa entrada é retirada |
 | Executável e log | `%LOCALAPPDATA%\FolDiscord\` | pasta apagada |
+
+O PATH é lido e gravado como valor bruto, preservando o tipo `REG_EXPAND_SZ`. Isso importa: reescrevê-lo como texto simples congelaria variáveis como `%USERPROFILE%\bin` que já estivessem lá, quebrando o PATH de quem instalou.
 
 Nada é escrito em `HKLM`, em `Arquivos de Programas` ou no diretório do Discord. **Nenhum arquivo do Discord é modificado** — nem `settings.json`, nem atalhos, nem os binários. Por isso atualizações do Discord não quebram nada e não há o que restaurar.
 
@@ -61,7 +64,7 @@ Os dois servidores escutam em `127.0.0.1` — não em `0.0.0.0`. Ninguém na sua
 ## O que o programa não faz
 
 - Não lê nem toca no seu token do Discord.
-- Não modifica arquivo nenhum do Discord.
+- Não modifica arquivo nenhum do Discord. Ele **fecha e reabre** o Discord na instalação, porque a correção só vale a partir da próxima abertura — mas não altera nada dentro dele. Use `--sem-reiniciar` se preferir fazer isso na mão.
 - Não injeta código no Discord (nada de client mod, nada de BetterDiscord).
 - Não coleta telemetria e não envia nada para lugar nenhum além das listas de proxies e do próprio Discord.
 - Não se atualiza sozinho. O binário só muda se você mandar.

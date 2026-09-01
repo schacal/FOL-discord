@@ -24,19 +24,19 @@ Abra o **PowerShell** e cole:
 irm https://raw.githubusercontent.com/schacal/FOL-discord/main/install.ps1 | iex
 ```
 
-Feche e abra o Discord uma vez. Pronto.
+É só isso. Ele instala, reinicia o Discord sozinho e já está valendo.
 
-A partir daí funciona sozinho — em todo reinício do PC, em toda abertura do Discord, e nas reconexões que ele faz sozinho no meio do uso. Até você desinstalar.
+A partir daí funciona por conta própria — em todo reinício do PC, em toda abertura do Discord, e nas reconexões que ele faz sozinho no meio do uso. Até você desinstalar.
 
 **Não precisa** de administrador, VPN, conta, Python, .NET ou qualquer outra instalação.
 
 ## Desinstalar
 
 ```powershell
-& "$env:LOCALAPPDATA\FolDiscord\fol-discord.exe" desinstalar
+fol-discord desinstalar
 ```
 
-Devolve o proxy automático do Windows ao valor anterior e apaga a pasta. Sem rastro.
+Devolve o proxy automático do Windows ao valor anterior, tira o programa do PATH e apaga a pasta. Sem rastro.
 
 ## Contexto
 
@@ -64,18 +64,29 @@ São 14 conexões e alguns kilobytes na abertura.
 
 ## Comandos
 
+O instalador coloca o programa no seu PATH. **Abra um terminal novo** e os comandos abaixo funcionam direto:
+
 ```powershell
-fol-discord instalar      # liga a correção e faz subir com o Windows
 fol-discord status        # mostra o estado atual
+fol-discord instalar      # liga a correção e reinicia o Discord
 fol-discord desinstalar   # remove tudo
 fol-discord rodar         # roda em primeiro plano, para depurar
 ```
 
-Se a correção padrão não bastar na sua máquina, existe uma rede de segurança que manda **todo** domínio do Discord pelo exterior:
+Se o terminal responder `não é reconhecido como nome de cmdlet`, ele ainda está com o PATH antigo. Abra uma janela nova, ou use o caminho completo:
 
 ```powershell
-fol-discord instalar --tudo-discord
+& "$env:LOCALAPPDATA\FolDiscord\fol-discord.exe" status
 ```
+
+Duas opções úteis:
+
+```powershell
+fol-discord instalar --sem-reiniciar   # não fecha o Discord que está aberto
+fol-discord instalar --tudo-discord    # manda todo domínio do Discord pelo exterior
+```
+
+A segunda é rede de segurança, para o caso de a correção padrão não bastar na sua máquina.
 
 ## Documentação
 
@@ -97,7 +108,8 @@ fol-discord/
 │   ├── socks.rs       o proxy local em 127.0.0.1:9250
 │   ├── pool.rs        piscina de proxies públicos, com auto-cura
 │   ├── pac.rs         o arquivo PAC que o Windows lê
-│   └── windows.rs     as duas chaves de registro, e como desfazê-las
+│   ├── discord.rs     encontra e reinicia o Discord
+│   └── windows.rs     registro: PAC, autostart, PATH — e como desfazê-los
 ├── docs/
 ├── assets/
 ├── install.ps1

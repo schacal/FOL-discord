@@ -8,6 +8,7 @@
 
 #![windows_subsystem = "windows"]
 
+mod discord;
 mod pac;
 mod pool;
 mod routing;
@@ -55,8 +56,10 @@ fn main() -> Result<()> {
         .map(|s| s.as_str())
         .unwrap_or("ajuda");
 
+    let reiniciar_discord = !args.iter().any(|a| a == "--sem-reiniciar");
+
     match comando {
-        "instalar" => instalar(),
+        "instalar" => instalar(reiniciar_discord),
         "desinstalar" => desinstalar(),
         "status" => status(),
         "rodar" => rodar(modo),
@@ -71,18 +74,20 @@ fn ajuda() {
     println!(
         "\nfol-discord {}\n\n\
          Uso:\n  \
-         fol-discord instalar      liga a correção e faz subir com o Windows\n  \
+         fol-discord instalar      liga a correção, reinicia o Discord e sobe com o Windows\n  \
          fol-discord desinstalar   remove tudo, sem deixar rastro\n  \
          fol-discord status        mostra o estado atual\n  \
          fol-discord rodar         roda em primeiro plano (para depurar)\n\n\
          Opções:\n  \
-         --tudo-discord                manda todo domínio do Discord pro exterior\n                                \
+         --sem-reiniciar           não mexe no Discord aberto; a correção vale na\n                            \
+         próxima vez que você abrir\n  \
+         --tudo-discord            manda todo domínio do Discord pro exterior\n                            \
          (use só se a correção padrão não bastar)\n",
         env!("CARGO_PKG_VERSION")
     );
 }
 
-fn instalar() -> Result<()> {
+fn instalar(reiniciar_discord: bool) -> Result<()> {
     let destino = caminho_instalado();
     std::fs::create_dir_all(pasta_dados()).context("criando a pasta de dados")?;
 
@@ -96,29 +101,72 @@ fn instalar() -> Result<()> {
     windows::ativar_autostart(&format!("\"{}\" rodar", destino.display()))
         .context("registrando o autostart")?;
     windows::ativar_pac(&url_pac()).context("ligando o proxy automático")?;
+    let _ = windows::adicionar_ao_path(&pasta_dados().display().to_string());
 
     std::process::Command::new(&destino)
         .arg("rodar")
         .spawn()
         .context("subindo o serviço")?;
 
-    println!("Instalado.\n");
+    // A piscina precisa de alguns segundos para validar os primeiros proxies.
+    // Reiniciar o Discord antes disso o faria abrir sem correção.
+    print!("Validando proxies");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    for _ in 0..12 {
+        std::thread::sleep(Duration::from_secs(5));
+        print!(".");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        if porta_ocupada(PORTA_SOCKS) && piscina_pronta() {
+            break;
+        }
+    }
+    println!();
+
+    println!("\nInstalado.\n");
     println!("  executável : {}", destino.display());
     println!("  log        : {}", caminho_log().display());
     println!("  autostart  : sim");
     println!("  PAC        : {}", url_pac());
-    println!("\nFeche e abra o Discord uma vez. Depois disso, nunca mais.");
+
+    if reiniciar_discord {
+        match discord::reiniciar() {
+            Ok(true) => println!("\nDiscord reiniciado. Já está valendo."),
+            Ok(false) => println!("\nDiscord não encontrado — a correção vale na próxima vez que você abrir."),
+            Err(e) => println!("\nNão consegui reiniciar o Discord ({e}). Feche e abra ele uma vez."),
+        }
+    } else {
+        println!("\nFeche e abra o Discord uma vez.");
+    }
+
+    println!("\nEm um terminal novo, o comando `fol-discord` já funciona sozinho.");
     Ok(())
+}
+
+/// Lê o log para saber se a primeira validação já terminou. É indireto, mas
+/// evita abrir um canal de controle só para isso.
+fn piscina_pronta() -> bool {
+    std::fs::read_to_string(caminho_log())
+        .map(|s| s.contains("proxies estrangeiros validados"))
+        .unwrap_or(false)
 }
 
 fn desinstalar() -> Result<()> {
     windows::desativar_pac().context("devolvendo o proxy automático")?;
     windows::desativar_autostart().context("removendo o autostart")?;
+    let _ = windows::remover_do_path(&pasta_dados().display().to_string());
     encerrar_outras_instancias();
+
+    // Fecha o Discord sem reabrir: reabrir agora, com o proxy já desligado, é
+    // exatamente o que o usuário quer — mas deixamos a escolha com ele.
+    let estava_aberto = discord::encerrar_se_aberto();
     let _ = std::fs::remove_dir_all(pasta_dados());
 
     println!("Removido. O proxy automático do Windows voltou ao que era antes.");
-    println!("Feche e abra o Discord para ele voltar a sair pelo seu IP normal.");
+    if estava_aberto {
+        println!("O Discord foi fechado. Abra de novo e ele já sai pelo seu IP normal.");
+    } else {
+        println!("Na próxima abertura, o Discord já sai pelo seu IP normal.");
+    }
     Ok(())
 }
 
@@ -128,6 +176,11 @@ fn status() -> Result<()> {
     println!("  autostart  : {}", sim_nao(windows::autostart_ativo()));
     println!("  PAC ligado : {}", sim_nao(windows::pac_ativo(&url_pac())));
     println!("  rodando    : {}", sim_nao(porta_ocupada(PORTA_SOCKS)));
+    println!(
+        "  no PATH    : {}",
+        sim_nao(windows::path_ativo(&pasta_dados().display().to_string()))
+    );
+    println!("  proxies    : {}", sim_nao(piscina_pronta()));
     println!("  log        : {}", caminho_log().display());
     Ok(())
 }
