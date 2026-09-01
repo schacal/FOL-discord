@@ -1,0 +1,116 @@
+# Como funciona
+
+## O problema
+
+O Discord decide a região da sua sessão **no momento em que abre**, a partir do IP que enxerga. Essa decisão fica valendo para a sessão inteira.
+
+Em provedores brasileiros com peering ruim até a borda do Discord, essa decisão sai errada. O sintoma mais visível é a **transmissão de tela parar de funcionar** — mas o mesmo problema aparece como voz cortando ou chamadas que não conectam.
+
+Dá para ver a decisão acontecendo. Este endpoint devolve a lista de regiões conforme o IP de quem pergunta, e não pede autenticação:
+
+```bash
+curl https://latency.discord.media/rtc
+```
+
+De uma conexão brasileira afetada, a resposta começa assim:
+
+```json
+[{"region":"brazil", ...}, {"region":"buenos-aires", ...}, {"region":"santiago", ...}]
+```
+
+Pela mesma conexão, saindo por um IP estrangeiro, a lista muda por completo — e a sessão passa a funcionar.
+
+## A correção manual que já se fazia
+
+Muita gente já tinha descoberto o jeito na mão: abrir o Discord com uma VPN ligada e desligar a VPN depois. Funciona, e o ping continua normal.
+
+Isso funciona porque o IP estrangeiro só precisa estar presente **na abertura**. Depois disso, a sessão já está decidida.
+
+O incômodo é ter que repetir isso toda vez — e o Discord reconecta sozinho de tempos em tempos, então a correção se perde no meio do uso sem aviso.
+
+## O que este programa faz
+
+A mesma coisa, sozinho, e só com as conexões que realmente decidem a região.
+
+```mermaid
+flowchart LR
+    D[Discord] -->|PAC do Windows| P[proxy local<br/>127.0.0.1:9250]
+    P -->|discord.com<br/>gateway.discord.gg<br/>latency.discord.media| E[proxy estrangeiro]
+    P -->|cdn, imagens| I[(internet)]
+    D -.->|áudio, vídeo e tela<br/>UDP, nunca passa pelo proxy| I
+    E --> I
+```
+
+O ponto que faz isso valer a pena: **o áudio, o vídeo e a transmissão de tela viajam em UDP e não passam pelo proxy**. O proxy do Windows só afeta TCP. Então a correção custa cerca de 14 conexões e alguns kilobytes na abertura, e o ping fica exatamente igual.
+
+Melhor ainda: o servidor de voz que você recebe continua sendo o brasileiro. Confirmado no log, o Discord entregou `c-gru17` e `c-gru18` — GRU é São Paulo.
+
+## As quatro peças
+
+### 1. Proxy local (`src/socks.rs`)
+
+Um servidor SOCKS5 em `127.0.0.1:9250`. É o único endereço que o Discord conhece. Para cada conexão ele consulta o roteamento e decide o caminho. O Discord não percebe diferença nenhuma.
+
+Se não houver nenhum proxy estrangeiro disponível, ele entrega a conexão direto em vez de recusar. Perde-se a correção naquele momento, nunca a conexão — o Discord não fica offline por causa de um proxy morto.
+
+### 2. Roteamento (`src/routing.rs`)
+
+Decide, por host, quem sai por fora:
+
+| Sai pelo exterior | Sai direto |
+| --- | --- |
+| `discord.com` | `cdn.discordapp.com` |
+| `gateway.discord.gg` | `media.discordapp.net` |
+| `latency.discord.media` | servidores de voz (`c-gru*.discord.media`) |
+| | todo o resto da internet |
+
+A separação é o que preserva o ping: a CDN é volume puro e a voz precisa de rota curta, então nenhuma das duas dá um passo a mais.
+
+### 3. Piscina de proxies (`src/pool.rs`)
+
+Busca listas públicas de proxies SOCKS5 e valida cada candidato contra o próprio Discord. Um candidato só entra se atender três coisas ao mesmo tempo:
+
+1. está de pé;
+2. consegue falar com o Discord;
+3. **não** cai na região `brazil`.
+
+O terceiro item é o que torna a validação real: não adianta o proxy estar vivo se ele não muda a decisão do Discord.
+
+A fila fica ordenada por latência. Quem falha em uso é rebaixado, e duas falhas eliminam. Quando a piscina fica com menos de três saudáveis, ela se reabastece sozinha. Você nunca configura nada.
+
+### 4. Instalação via PAC (`src/pac.rs`, `src/windows.rs`)
+
+Um arquivo PAC servido em `127.0.0.1:9251` diz ao Windows para entregar **só** o tráfego do Discord ao proxy local. Todo o resto responde `DIRECT` e nem passa por aqui.
+
+O Windows aponta para esse arquivo por uma única chave de registro:
+
+```
+HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings → AutoConfigURL
+```
+
+Foi a escolha certa por três motivos:
+
+- o Discord relê o PAC em toda abertura, então a correção vale sempre;
+- não é preciso mexer em atalho, então atualizações do Discord não quebram nada;
+- é `HKCU`, então não precisa de administrador, e desinstalar é devolver o valor anterior.
+
+Se já existia um `AutoConfigURL` na máquina, ele é guardado antes de ser trocado e devolvido na desinstalação.
+
+## Caminhos que não funcionaram
+
+Documentado para ninguém repetir o esforço:
+
+**`chromiumSwitches` no `settings.json` do Discord.** Parecia a instalação perfeita — uma linha de JSON. Mas o Discord chama `app.commandLine.appendSwitch(chave)` **sem valor**, então `--proxy-server=...` é impossível por ali. Verificado na prática: com um proxy apontado para uma porta morta, o Discord conectou normalmente.
+
+**Tor como fonte gratuita de IP estrangeiro.** Trava em 50% do bootstrap em provedores brasileiros pequenos e nunca fecha circuito. Testado por 25 minutos, zero circuitos. Além disso o Discord marca IPs de saída do Tor.
+
+**Cloudflare — WARP ou Workers.** A hipótese era que as bases de geolocalização mapeariam a faixa da Cloudflare como EUA. Não mapeiam: a Cloudflare publica um geofeed correto por data center. Medido com o WARP ligado a partir do Brasil:
+
+```
+sem WARP : 170.82.x.x    BR
+com WARP : 104.28.x.x    BR   (colo=GIG, loc=BR)
+```
+
+Você sai do Brasil e continua brasileiro. Isso vale igualmente para o truque de Workers com `cloudflare:sockets` — mesma rede anycast, mesmos data centers, mesmo geofeed.
+
+**Limpar o cache do Discord.** Testado: apagar `Cache`, `Code Cache`, `GPUCache` e afins não corrige. O IP estrangeiro é necessário mesmo.

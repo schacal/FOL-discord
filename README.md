@@ -1,18 +1,32 @@
-# desbuga-discord
+<h1 align="center">desbuga-discord</h1>
 
-Corrige o bug do Discord que derruba a **transmissão de tela** em vários provedores brasileiros.
+<p align="center">
+  Corrige o bug do Discord que derruba a <b>transmissão de tela</b> em provedores brasileiros.<br>
+  Sem VPN, sem conta, sem mensalidade, sem administrador. Instala e esquece.
+</p>
+
+<p align="center">
+  <a href="https://github.com/schacal/desbuga-discord/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/schacal/desbuga-discord?style=flat-square"></a>
+  <a href="https://github.com/schacal/desbuga-discord/actions"><img alt="build" src="https://img.shields.io/github/actions/workflow/status/schacal/desbuga-discord/release.yml?style=flat-square"></a>
+  <img alt="tamanho" src="https://img.shields.io/badge/tamanho-1.8%20MB-blue?style=flat-square">
+  <img alt="licença" src="https://img.shields.io/badge/licen%C3%A7a-MIT-green?style=flat-square">
+</p>
+
+---
 
 ## Instalar
 
-Abra o PowerShell e cole:
+Abra o **PowerShell** e cole:
 
 ```powershell
 irm https://raw.githubusercontent.com/schacal/desbuga-discord/main/install.ps1 | iex
 ```
 
-Feche e abra o Discord uma vez. Pronto — funciona em todo reinício, sozinho, até você desinstalar.
+Feche e abra o Discord uma vez. Pronto.
 
-Não precisa de administrador. Não precisa instalar Python, .NET, VPN nem conta em lugar nenhum.
+A partir daí funciona sozinho — em todo reinício do PC, em toda abertura do Discord, e nas reconexões que ele faz sozinho no meio do uso. Até você desinstalar.
+
+**Não precisa** de administrador, VPN, conta, Python, .NET ou qualquer outra instalação.
 
 ## Desinstalar
 
@@ -22,31 +36,21 @@ Não precisa de administrador. Não precisa instalar Python, .NET, VPN nem conta
 
 Devolve o proxy automático do Windows ao valor anterior e apaga a pasta. Sem rastro.
 
-## O que está acontecendo
+## O que ele resolve
 
-O Discord decide a região da sua sessão pelo IP que enxerga **no momento em que abre**. Em provedores brasileiros com peering ruim essa decisão sai errada, e o sintoma mais visível é a transmissão de tela parar de funcionar.
+O Discord decide a região da sua sessão pelo IP que enxerga **no momento em que abre**. Em provedores brasileiros com peering ruim, essa decisão sai errada — e o sintoma mais visível é a transmissão de tela parar de funcionar.
 
-A correção é a mesma que já se fazia na mão — abrir o Discord com uma VPN ligada e desligar depois. Este programa faz isso sozinho, sem VPN, e só com as conexões que importam:
+A gambiarra conhecida era abrir o Discord com VPN ligada e desligar depois. Isto faz o mesmo, sozinho, sem VPN, e só com as conexões que realmente decidem a região.
 
 | Sai por um IP estrangeiro | Sai direto, como sempre |
 | --- | --- |
-| `discord.com` | Áudio e vídeo das chamadas (UDP) |
-| `gateway.discord.gg` | Transmissão de tela |
-| `latency.discord.media` | `cdn.discordapp.com` e imagens |
-| | Todo o resto da internet |
+| `discord.com` | **Áudio, vídeo e transmissão de tela** |
+| `gateway.discord.gg` | `cdn.discordapp.com` e imagens |
+| `latency.discord.media` | Todo o resto da internet |
 
-São 14 conexões e alguns kilobytes na abertura. **O ping não muda** — a voz e a tela nunca passam pelo exterior, e o servidor de voz que você recebe continua sendo o brasileiro.
+São 14 conexões e alguns kilobytes na abertura.
 
-## Como funciona por dentro
-
-1. Um proxy SOCKS5 roda em `127.0.0.1:9250`, invisível, e sobe com o Windows.
-2. Ele mantém uma piscina de proxies públicos gratuitos, validando cada um contra o próprio Discord: está de pé? fala com o Discord? tira você da região `brazil`? Quem falha é trocado sozinho.
-3. Um arquivo PAC em `127.0.0.1:9251` diz ao Windows para entregar só o tráfego do Discord a esse proxy. O resto da internet nem passa por ali.
-4. O Discord obedece ao proxy automático do Windows em toda abertura — por isso não é preciso mexer em atalho, e a correção sobrevive às atualizações dele.
-
-### Suas credenciais estão seguras
-
-O proxy carrega tráfego **HTTPS**, em túnel. Quem opera o proxy vê apenas *que* você falou com `discord.com` — nunca o conteúdo, nunca seu token, nunca suas mensagens. O programa não instala certificado raiz e não seria capaz de ler nada mesmo que quisesse.
+**O ping não muda.** A voz e a tela viajam em UDP e nunca passam pelo proxy — o proxy do Windows só afeta TCP. E o servidor de voz que você recebe continua sendo o brasileiro: nos testes, `c-gru17` e `c-gru18`, ou seja, São Paulo.
 
 ## Comandos
 
@@ -60,19 +64,47 @@ desbuga-discord rodar         # roda em primeiro plano, para depurar
 Se a correção padrão não bastar na sua máquina, existe uma rede de segurança que manda **todo** domínio do Discord pelo exterior:
 
 ```powershell
-desbuga-discord rodar --tudo-discord
+desbuga-discord instalar --tudo-discord
 ```
 
-Log em `%LOCALAPPDATA%\DesbugaDiscord\desbuga.log`.
+## Documentação
 
-## Compilar do código-fonte
+| | |
+| --- | --- |
+| [**Como funciona**](docs/como-funciona.md) | O mecanismo por dentro, as quatro peças, e os caminhos que não funcionaram |
+| [**Segurança**](docs/seguranca.md) | O que está protegido, o que fica exposto, e como verificar por conta própria |
+| [**Problemas**](docs/problemas.md) | Quando não funciona, e o que olhar |
+
+**Resumo de segurança:** o tráfego é HTTPS em túnel, então quem opera o proxy vê apenas *que* você falou com o Discord — nunca o conteúdo, nunca seu token, nunca suas mensagens. Nenhum certificado raiz é instalado, nenhum arquivo do Discord é modificado, e nada roda como administrador. A [página de segurança](docs/seguranca.md) explica também o que **fica** exposto, porque não é zero.
+
+## Estrutura
+
+```
+desbuga-discord/
+├── src/
+│   ├── main.rs        instalação, desinstalação, status, laço principal
+│   ├── routing.rs     decide, por host, quem sai por fora
+│   ├── socks.rs       o proxy local em 127.0.0.1:9250
+│   ├── pool.rs        piscina de proxies públicos, com auto-cura
+│   ├── pac.rs         o arquivo PAC que o Windows lê
+│   └── windows.rs     as duas chaves de registro, e como desfazê-las
+├── docs/
+├── install.ps1
+└── .github/workflows/release.yml
+```
+
+## Compilar
 
 ```bash
 cargo build --release
 ```
 
-O binário sai em `target/release/desbuga-discord.exe`. Os releases publicados são compilados pelo GitHub Actions a partir deste mesmo repositório.
+Sai em `target/release/desbuga-discord.exe`. Os binários publicados em *Releases* são compilados pelo GitHub Actions a partir deste repositório — não são enviados da máquina de ninguém.
+
+```bash
+cargo test
+```
 
 ## Licença
 
-MIT
+MIT. Veja [LICENSE](LICENSE).

@@ -39,7 +39,10 @@ async fn atender(mut cliente: TcpStream, pool: Pool, modo: Modo) -> Result<()> {
 
     let servidor = match rota {
         Rota::Exterior => match abrir_pelo_exterior(&pool, &host, porta).await {
-            Ok(s) => s,
+            Ok(s) => {
+                log::linha(&format!("exterior  {host}:{porta}"));
+                s
+            }
             Err(e) => {
                 // Sem upstream sadio é melhor entregar direto do que derrubar o
                 // Discord: perde-se a correção, não a conexão.
@@ -47,7 +50,10 @@ async fn atender(mut cliente: TcpStream, pool: Pool, modo: Modo) -> Result<()> {
                 abrir_direto(&host, porta).await?
             }
         },
-        Rota::Direta => abrir_direto(&host, porta).await?,
+        Rota::Direta => {
+            log::linha(&format!("direto    {host}:{porta}"));
+            abrir_direto(&host, porta).await?
+        }
     };
 
     responder_ok(&mut cliente).await?;
@@ -195,13 +201,33 @@ async fn encaminhar(mut a: TcpStream, mut b: TcpStream) -> Result<()> {
 }
 
 pub mod log {
-    use std::io::Write;
+    use std::{
+        io::Write,
+        sync::{Mutex, OnceLock},
+    };
+
+    const TAMANHO_MAXIMO: u64 = 512 * 1024;
+
+    /// Escritas são serializadas: sem isso, threads concorrentes intercalam
+    /// linhas no meio umas das outras.
+    fn tranca() -> &'static Mutex<()> {
+        static T: OnceLock<Mutex<()>> = OnceLock::new();
+        T.get_or_init(|| Mutex::new(()))
+    }
 
     pub fn linha(msg: &str) {
+        let _guarda = tranca().lock();
+        let caminho = crate::caminho_log();
+
+        // O log é para diagnóstico, não para histórico: passou do teto, recomeça.
+        if std::fs::metadata(&caminho).map(|m| m.len()).unwrap_or(0) > TAMANHO_MAXIMO {
+            let _ = std::fs::write(&caminho, b"");
+        }
+
         if let Ok(mut f) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(crate::caminho_log())
+            .open(&caminho)
         {
             let _ = writeln!(f, "{msg}");
         }
