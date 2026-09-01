@@ -461,6 +461,21 @@ test("a release publica o nome de setup que a janela instalada procura", async (
   );
 });
 
+test("a janela troca o serviço antigo depois de uma atualização por cima", async () => {
+  // Quando os arquivos são trocados sem passar pelo desinstalador (modo
+  // silencioso, ou "Não desinstalar" na tela do instalador), o serviço antigo
+  // continua rodando até o próximo logon. A janela precisa notar que a cópia
+  // instalada não é mais a do instalador e trocá-la — sem passar por
+  // `instalar`, que religaria o PAC de quem tinha pausado.
+  const ponte = await readFile(ponteNativa, "utf8");
+
+  assert.match(
+    ponte,
+    /fn garantir_servico[\s\S]*?copia_instalada_e_a_do_instalador[\s\S]*?\.arg\("rodar"\)/,
+    "garantir_servico precisa trocar uma cópia desatualizada só subindo `rodar`",
+  );
+});
+
 test("trazer a janela da bandeja consulta se saiu versão nova", async () => {
   // Só ao abrir e a cada seis horas não bastava: a janela passa o dia
   // escondida, e quem clicava nela logo depois de uma release não via aviso.

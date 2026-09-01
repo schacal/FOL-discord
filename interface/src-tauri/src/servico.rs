@@ -186,12 +186,47 @@ fn gravar_servico(destino: &Path) -> Result<(), String> {
     fs::rename(&novo, destino).map_err(|e| format!("não consegui instalar o serviço: {e}"))
 }
 
+fn mesmos_bytes(a: &Path, b: &Path) -> bool {
+    let tamanho = |caminho: &Path| fs::metadata(caminho).map(|m| m.len()).ok();
+    if tamanho(a) != tamanho(b) {
+        return false;
+    }
+    matches!((fs::read(a), fs::read(b)), (Ok(x), Ok(y)) if x == y)
+}
+
+/// A cópia em `%LOCALAPPDATA%\FolDiscord` é a que roda; a do instalador é a
+/// que acabou de chegar. Quando divergem, houve atualização por cima e o
+/// serviço antigo continua no ar sem ninguém perceber. Sem instalador ao lado
+/// (`cargo tauri dev`) não há com o que comparar.
+fn copia_instalada_e_a_do_instalador(destino: &Path) -> bool {
+    match origem_do_servico() {
+        Some(origem) => mesmos_bytes(&origem, destino),
+        None => true,
+    }
+}
+
 /// Garante que a cópia estável esteja instalada e inicia a instalação sem
 /// bloquear a janela enquanto a piscina de proxies é validada.
 pub fn garantir_servico(reiniciar_discord: bool, criar_run_legado: bool) -> Result<(), String> {
     let destino = executavel_instalado();
     if destino.exists() && servico_rodando() {
-        return Ok(());
+        if copia_instalada_e_a_do_instalador(&destino) {
+            return Ok(());
+        }
+        // Versão nova instalada por cima de um serviço que ainda roda: trocamos
+        // o executável e subimos só o `rodar`. Passar por `instalar` religaria o
+        // proxy de quem tinha pausado e mexeria no PATH sem necessidade — a
+        // configuração da pessoa não mudou, só o binário.
+        encerrar_copias_antigas();
+        gravar_servico(&destino)?;
+        let _ = fs::remove_file(caminho_pronto());
+        return comando_oculto(&destino)
+            .arg("rodar")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("não consegui subir o serviço atualizado: {e}"));
     }
 
     if destino.exists() {
@@ -649,12 +684,31 @@ fn erro_inicializacao() -> Option<String> {
 mod tests {
     use super::{
         atualizacao_da_release, consulta_vale_a_pena, interpretar_conexoes,
-        ler_ultima_validacao_em, registrar_ultima_validacao_em,
+        ler_ultima_validacao_em, mesmos_bytes, registrar_ultima_validacao_em,
     };
     use std::{
         fs,
         time::{Duration, Instant},
     };
+
+    #[test]
+    fn reconhece_quando_a_copia_instalada_ficou_para_tras() {
+        let pasta = tempfile::tempdir().unwrap();
+        let instalador = pasta.path().join("fol-discord-x86_64.exe");
+        let instalada = pasta.path().join("fol-discord.exe");
+
+        fs::write(&instalador, b"versao nova").unwrap();
+        fs::write(&instalada, b"versao nova").unwrap();
+        assert!(mesmos_bytes(&instalador, &instalada));
+
+        // Mesmo tamanho, conteúdo diferente: o tamanho sozinho não basta.
+        fs::write(&instalada, b"versaondva").unwrap();
+        assert!(!mesmos_bytes(&instalador, &instalada));
+
+        fs::write(&instalada, b"antiga").unwrap();
+        assert!(!mesmos_bytes(&instalador, &instalada));
+        assert!(!mesmos_bytes(&instalador, &pasta.path().join("nao-existe.exe")));
+    }
 
     #[test]
     fn mostrar_a_janela_consulta_de_novo_so_depois_da_folga() {
