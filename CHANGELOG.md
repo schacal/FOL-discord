@@ -13,6 +13,21 @@ abertura — ela consulta de novo, com folga mínima de dez minutos entre
 consultas. A consulta continua sendo só a release pública do GitHub; nada da
 pessoa é enviado.
 
+**Serviço trocado depois de atualizar por cima.** Quando o instalador novo
+só substituía os arquivos (modo silencioso, ou **Não desinstalar** na tela do
+instalador), o serviço antigo continuava rodando até o próximo logon. Agora a
+janela percebe que a cópia em execução não é a que o instalador trouxe e a
+troca sozinha, sem religar o proxy de quem tinha pausado.
+
+**Limitação conhecida ao atualizar.** O instalador pergunta se deve
+*desinstalar antes de instalar*, e essa é a opção marcada por padrão. Ela roda
+o desinstalador da versão antiga, que devolve o proxy, apaga a tarefa de logon
+e fecha o Discord — como faria numa remoção. Por enquanto, ao atualizar, marque
+**Não desinstalar**. Se já passou pela primeira opção: a correção volta sozinha
+quando a janela abre; **Iniciar com o PC** precisa ser religado na janela. Uma
+guarda no desinstalador para reconhecer a atualização foi tentada nesta versão
+e não segurou no teste, por isso ficou de fora.
+
 ## 0.2.6 — 2026-09-01
 
 Versão de limpeza: menos motivos para o antivírus reclamar, e o aviso de versão

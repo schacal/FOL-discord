@@ -96,6 +96,18 @@ proxy estar pronto, feche e abra o Discord uma vez depois de o ícone deixar de
 mostrar preparação. Não edite chaves de atraso do Explorer, prioridade de
 processo ou valores aleatórios do Registro para tentar contornar isso.
 
+## Depois de atualizar, "Iniciar com o PC" apareceu desligado
+
+Ao abrir um instalador novo por cima, ele pergunta se deve **desinstalar antes
+de instalar** — e essa opção vem marcada. Ela roda o desinstalador da versão
+antiga, que desliga o proxy, apaga a tarefa de logon e fecha o Discord, como
+faria numa remoção completa.
+
+Ao atualizar, escolha **Não desinstalar**: os arquivos são trocados e a janela
+substitui o serviço sozinha, com a configuração intacta. Se já passou pela
+primeira opção, a janela religa o proxy ao abrir; o autostart você religa no
+interruptor **Iniciar com o PC**.
+
 ## O Discord pediu verificação de e-mail ou telefone
 
 Comportamento esperado dele ao ver a sessão vindo de outro país — o mesmo de quando alguém abre o Discord viajando. Confirme normalmente. Se preferir não conviver com isso, desinstale.

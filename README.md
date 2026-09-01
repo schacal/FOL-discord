@@ -99,8 +99,9 @@ Fechar a janela só a esconde na bandeja; a correção continua rodando.
 
 A janela confere se saiu versão nova ao abrir e toda vez que você a chama pela
 bandeja; se houver, mostra um botão ao lado da versão que abre o download. Ela
-nunca instala nada por conta própria. Para atualizar, basta abrir o instalador
-novo por cima: ele troca os arquivos e mantém a configuração.
+nunca instala nada por conta própria. Para atualizar, abra o instalador novo
+por cima e, quando ele perguntar, escolha **Não desinstalar**: ele troca os
+arquivos e a configuração fica como estava.
 
 ## Desinstalar
 
