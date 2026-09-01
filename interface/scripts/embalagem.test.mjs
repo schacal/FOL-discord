@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { coresDistintas, lerPng } from "./png.mjs";
+
 const daqui = fileURLToPath(new URL(".", import.meta.url));
 const janela = new URL(
   "../src-tauri/target/release/fol-discord-janela.exe",
@@ -99,6 +101,109 @@ test("a janela usa a logo principal e a bandeja continua dinâmica", async () =>
   assert.match(bandeja, /bandeja-pausado\.png/);
   assert.match(bandeja, /bandeja-sem_proxies\.png/);
   assert.match(bandeja, /bandeja-parado\.png/);
+});
+
+test("o ícone do programa é a mesma logo ilustrada do cabeçalho", async () => {
+  // O que separa as duas marcas é o número de cores: a logo ilustrada tem
+  // milhares, a marca desenhada por fórmula tem o indigo chapado, o branco do
+  // "L" e o antisserrilhado entre eles. Enquanto o `.ico` saía da fórmula, a
+  // janela mostrava uma logo na tela e outra na barra de tarefas.
+  const [logo, janelaIcone, pequeno, bandejaIcone] = await Promise.all([
+    readFile(logoPrincipal),
+    readFile(new URL("../src-tauri/icones/icon.png", import.meta.url)),
+    readFile(new URL("../src-tauri/icones/128x128.png", import.meta.url)),
+    readFile(new URL("../src-tauri/icones/bandeja-operacional.png", import.meta.url)),
+  ]);
+
+  const cores = coresDistintas(logo);
+  assert.ok(cores > 1000, `a logo principal deveria ser ilustrada, tem ${cores} cores`);
+  assert.ok(
+    coresDistintas(janelaIcone) > 1000,
+    "icones/icon.png voltou a ser a marca desenhada por fórmula",
+  );
+  assert.ok(
+    coresDistintas(pequeno) > 500,
+    "icones/128x128.png voltou a ser a marca desenhada por fórmula",
+  );
+  assert.equal(lerPng(janelaIcone).largura, lerPng(logo).largura);
+
+  // A bandeja é o contrário de propósito: ela precisa continuar chapada, para
+  // mudar de cor por estado e continuar legível em 16 px.
+  assert.ok(
+    coresDistintas(bandejaIcone) < 500,
+    "a bandeja precisa continuar sendo a marca por fórmula, uma cor por estado",
+  );
+});
+
+test("o botão Desinstalar procura a chave que o setup NSIS realmente grava", async () => {
+  // O template do Tauri monta a chave de desinstalação com o `productName`,
+  // não com o `identifier`. Procurar pelo identificador achava sempre nada, e
+  // o botão só falhava depois de instalado pelo setup — nunca em `dev`.
+  const [fonte, configuracaoTexto] = await Promise.all([
+    readFile(inicializacao, "utf8"),
+    readFile(configuracaoTauri, "utf8"),
+  ]);
+  const { productName } = JSON.parse(configuracaoTexto);
+
+  // Montada por partes: uma chave do registro cheia de contrabarras dentro de
+  // uma expressão regular vira um enigma de escapes, e o enigma esconde o erro.
+  const chaveEsperada = [
+    "Software",
+    "Microsoft",
+    "Windows",
+    "CurrentVersion",
+    "Uninstall",
+    productName,
+  ].join("\\");
+
+  assert.ok(
+    fonte.includes(`r"${chaveEsperada}"`),
+    `a chave de desinstalação precisa terminar em ${productName}`,
+  );
+  assert.match(
+    fonte,
+    /NOME_DESINSTALADOR: &str = "uninstall\.exe"/,
+    "sem o desinstalador vizinho, apagar o registro deixa a janela sem botão",
+  );
+});
+
+test("desinstalar pelo setup remove a tarefa de logon que a janela criou", async () => {
+  // A tarefa é criada pela janela, então o desinstalador do NSIS não a conhece
+  // sozinho. Deixá-la para trás faz o Windows tentar abrir um .exe apagado a
+  // cada login.
+  const hooks = await readFile(hooksNsis, "utf8");
+
+  assert.match(hooks, /schtasks\.exe" \/delete \/tn "FolDiscord\.Bandeja" \/f/);
+  const execs = hooks.match(/nsExec::ExecToLog/g) ?? [];
+  const pops = hooks.match(/^\s*Pop \$0$/gm) ?? [];
+  assert.equal(
+    execs.length,
+    pops.length,
+    "cada nsExec deixa um código na pilha; sem o Pop, o StrCmp lê o comando errado",
+  );
+});
+
+test("a última checagem é carimbada pelo serviço, não só pelo botão", async () => {
+  // Enquanto só `verificar` escrevia, a coluna ficava em travessão para sempre
+  // para quem nunca clicava em "Verificar agora".
+  const [servico, ponte] = await Promise.all([
+    readFile(nucleo, "utf8"),
+    readFile(ponteNativa, "utf8"),
+  ]);
+
+  const arquivo = /join\("ultima-validacao-ms"\)/;
+  assert.match(servico, arquivo, "o serviço não conhece o arquivo da checagem");
+  assert.match(ponte, arquivo, "a janela lê outro arquivo");
+  assert.match(
+    servico,
+    /registrar_checagem_em\(&caminho_ultima_validacao\(\), milissegundos_agora\(\)\)/,
+    "o laço de manutenção não carimba a passada que acabou de fazer",
+  );
+  assert.match(
+    servico,
+    /let _ = std::fs::remove_file\(caminho_ultima_validacao\(\)\)/,
+    "uma instalação nova herdaria a checagem da instalação anterior",
+  );
 });
 
 test("reiniciar Discord não pode aguardar a validação de proxies", async () => {
