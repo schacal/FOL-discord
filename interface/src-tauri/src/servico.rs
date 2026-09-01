@@ -2,9 +2,14 @@
 //!
 //! A primeira versão da interface tentava falar com uma API HTTP planejada na
 //! porta 9252. O serviço publicado não expõe essa API: ele só usa 9250 (SOCKS)
-//! e 9251 (PAC). Esta ponte usa os comandos que já funcionam, e leva uma cópia
-//! deles embutida no executável da janela para que a primeira abertura consiga
-//! instalar tudo sozinha.
+//! e 9251 (PAC). Esta ponte usa os comandos que já funcionam.
+//!
+//! O executável do serviço chega como sidecar do instalador, ao lado desta
+//! janela — não embutido dentro dela. Carregar um `.exe` inteiro como dado e
+//! escrevê-lo em disco na execução é a assinatura comportamental de conta-gotas
+//! que os antivírus procuram, e era desnecessária: o instalador já entrega o
+//! arquivo. Builds de desenvolvimento continuam com a cópia embutida, porque lá
+//! não existe instalador que a coloque no lugar.
 
 use crate::inicializacao;
 use serde::{Deserialize, Serialize};
@@ -21,6 +26,7 @@ use winreg::{enums::*, RegKey};
 use std::os::windows::process::CommandExt;
 
 const PORTA_PAC: u16 = 9251;
+const IMAGEM_DO_SERVICO: &str = "fol-discord.exe";
 const CHAVE_INTERNET: &str = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
 const URL_ULTIMA_RELEASE: &str = "https://api.github.com/repos/schacal/FOL-discord/releases/latest";
 const INTERVALO_ATUALIZACAO: Duration = Duration::from_secs(6 * 60 * 60);
@@ -30,6 +36,10 @@ static ATUALIZACAO: OnceLock<Mutex<Option<Atualizacao>>> = OnceLock::new();
 static VERIFICADOR_DE_ATUALIZACAO: OnceLock<()> = OnceLock::new();
 
 /// Copiado pelo build.rs depois de compilar o serviço raiz deste repositório.
+/// O `cfg` remove o item antes da expansão da macro, então em release o
+/// `include_bytes!` nem chega a ser avaliado e nenhum byte do serviço entra
+/// no binário publicado.
+#[cfg(debug_assertions)]
 const SERVICO_EMBUTIDO: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/fol-discord.exe"));
 
 #[derive(Clone, Serialize)]
@@ -112,16 +122,7 @@ fn url_pac() -> String {
 /// Não abrimos uma conexão SOCKS só para ver se o processo existe: o serviço
 /// registra esse teste como `early eof`, poluindo o histórico da atividade.
 fn servico_rodando() -> bool {
-    let mut comando = comando_oculto("tasklist");
-    comando
-        .args(["/FI", "IMAGENAME eq fol-discord.exe", "/NH"])
-        .output()
-        .map(|saida| {
-            String::from_utf8_lossy(&saida.stdout)
-                .to_ascii_lowercase()
-                .contains("fol-discord.exe")
-        })
-        .unwrap_or(false)
+    crate::processos::esta_rodando(IMAGEM_DO_SERVICO)
 }
 
 fn comando_oculto(programa: impl AsRef<std::ffi::OsStr>) -> Command {
@@ -135,22 +136,47 @@ fn comando_oculto(programa: impl AsRef<std::ffi::OsStr>) -> Command {
 }
 
 fn encerrar_copias_antigas() {
-    let _ = comando_oculto("taskkill")
-        .args(["/F", "/IM", "fol-discord.exe"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+    // Esta janela chama-se `fol-discord-janela.exe`, então não há risco de
+    // encerrar a si própria — ao contrário do serviço, que compartilha o nome
+    // de imagem com as cópias que precisa substituir.
+    crate::processos::encerrar_por_nome(IMAGEM_DO_SERVICO);
 }
 
-fn gravar_servico_embutido(destino: &Path) -> Result<(), String> {
+/// O instalador grava o serviço como `fol-discord.exe` ao lado desta janela.
+/// É a mesma cópia que o `hooks.nsh` chama na desinstalação.
+fn origem_do_servico() -> Option<PathBuf> {
+    let ao_lado = std::env::current_exe()
+        .ok()?
+        .parent()?
+        .join(IMAGEM_DO_SERVICO);
+    ao_lado.is_file().then_some(ao_lado)
+}
+
+/// Em `cargo tauri dev` não existe instalador para colocar o serviço ao lado,
+/// então a cópia embutida cobre esse caso — e só ele.
+#[cfg(debug_assertions)]
+fn gravar_copia_de_desenvolvimento(novo: &Path) -> Result<(), String> {
+    fs::write(novo, SERVICO_EMBUTIDO).map_err(|e| format!("não consegui preparar o serviço: {e}"))
+}
+
+#[cfg(not(debug_assertions))]
+fn gravar_copia_de_desenvolvimento(_novo: &Path) -> Result<(), String> {
+    Err("não encontrei o serviço ao lado da janela; reinstale o FOL-discord pelo instalador".into())
+}
+
+fn gravar_servico(destino: &Path) -> Result<(), String> {
     let pasta = destino
         .parent()
         .ok_or_else(|| "não encontrei a pasta de instalação".to_string())?;
     fs::create_dir_all(pasta).map_err(|e| format!("não consegui criar a pasta: {e}"))?;
 
     let novo = destino.with_extension("novo");
-    fs::write(&novo, SERVICO_EMBUTIDO)
-        .map_err(|e| format!("não consegui preparar o serviço: {e}"))?;
+    match origem_do_servico() {
+        Some(origem) => {
+            fs::copy(&origem, &novo).map_err(|e| format!("não consegui preparar o serviço: {e}"))?;
+        }
+        None => gravar_copia_de_desenvolvimento(&novo)?,
+    }
     if destino.exists() {
         fs::remove_file(destino).map_err(|e| format!("não consegui substituir o serviço antigo: {e}"))?;
     }
@@ -170,7 +196,7 @@ pub fn garantir_servico(reiniciar_discord: bool, criar_run_legado: bool) -> Resu
         // executável conhecido antes de trocar o arquivo, nunca o Discord.
         encerrar_copias_antigas();
     }
-    gravar_servico_embutido(&destino)?;
+    gravar_servico(&destino)?;
 
     let mut comando = comando_oculto(&destino);
     comando

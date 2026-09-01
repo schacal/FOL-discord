@@ -19,6 +19,7 @@ use tauri::{
 
 mod servico;
 mod inicializacao;
+mod processos;
 
 const BANDEJA: &str = "principal";
 const JANELA: &str = "principal";
@@ -68,9 +69,9 @@ fn mostrar(app: &AppHandle) {
     }
 }
 
-/// Sobe (ou reinstala) a cópia do serviço que vai dentro deste executável.
-/// A janela não depende de uma pasta previamente instalada nem de uma API que
-/// o serviço estável não expõe.
+/// Sobe (ou reinstala) a cópia estável do serviço a partir do arquivo que o
+/// instalador deixou ao lado desta janela. A janela não fala com nenhuma API
+/// que o serviço estável não expõe.
 #[tauri::command]
 fn religar_servico() -> Result<(), String> {
     servico::garantir_servico(false, false)

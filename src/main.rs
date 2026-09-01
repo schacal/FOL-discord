@@ -11,6 +11,7 @@
 mod discord;
 mod pac;
 mod pool;
+mod processos;
 mod routing;
 mod socks;
 mod windows;
@@ -303,16 +304,11 @@ fn reiniciar_discord() -> Result<()> {
 /// porque o instalador tem o mesmo nome de imagem e mataria a si próprio.
 fn encerrar_outras_instancias() {
     let eu = std::process::id();
-    let _ = comando_oculto("taskkill")
-        .args([
-            "/F",
-            "/IM",
-            "fol-discord.exe",
-            "/FI",
-            &format!("PID ne {eu}"),
-        ])
-        .output();
-    std::thread::sleep(Duration::from_millis(800));
+    let antigas: Vec<u32> = processos::pids_por_nome("fol-discord.exe")
+        .into_iter()
+        .filter(|pid| *pid != eu)
+        .collect();
+    processos::encerrar_todos(&antigas);
 }
 
 fn sim_nao(b: bool) -> &'static str {

@@ -26,6 +26,17 @@ const ALVO_SAUDAVEIS: usize = 5;
 const VALIDACOES_SIMULTANEAS: usize = 60;
 const TIMEOUT_VALIDACAO: Duration = Duration::from_secs(8);
 
+/// Todo tráfego do serviço se identifica. Requisição HTTP anônima saindo de um
+/// processo sem janela é sinal barato para sandbox e feed de reputação — e é
+/// exatamente o formato de quem baixa configuração de um servidor de comando.
+/// Com um nome e o endereço do repositório, o mesmo tráfego passa a ser
+/// atribuível a um programa que qualquer um pode ler.
+const IDENTIFICACAO: &str = concat!(
+    "FOL-discord/",
+    env!("CARGO_PKG_VERSION"),
+    " (+https://github.com/schacal/FOL-discord)"
+);
+
 #[derive(Clone, Debug)]
 pub struct Upstream {
     pub endereco: String,
@@ -122,6 +133,7 @@ impl Pool {
 
 async fn baixar_listas() -> Result<Vec<String>> {
     let cliente = reqwest::Client::builder()
+        .user_agent(IDENTIFICACAO)
         .timeout(Duration::from_secs(30))
         .build()?;
 
@@ -156,6 +168,7 @@ fn parece_ip_porta(s: &str) -> bool {
 /// estar de pé, conseguir falar com o Discord, e **não** cair na região `brazil`.
 async fn validar(endereco: String) -> Option<Upstream> {
     let cliente = reqwest::Client::builder()
+        .user_agent(IDENTIFICACAO)
         .proxy(reqwest::Proxy::all(format!("socks5h://{endereco}")).ok()?)
         .timeout(TIMEOUT_VALIDACAO)
         .build()

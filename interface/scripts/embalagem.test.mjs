@@ -22,48 +22,87 @@ const controleDiscord = new URL("../../src/discord.rs", import.meta.url);
 const tela = new URL("../src/App.tsx", import.meta.url);
 const marca = new URL("../src/componentes/Marca.tsx", import.meta.url);
 const logoPrincipal = new URL("../../assets/icons/app.png", import.meta.url);
-const pastaDeBuild = fileURLToPath(
-  new URL("../src-tauri/target/release/build/", import.meta.url),
+const pastaSidecar = fileURLToPath(new URL("../src-tauri/binaries/", import.meta.url));
+const nucleoCompiladoCaminho = fileURLToPath(
+  new URL("../../target/release/fol-discord.exe", import.meta.url),
 );
 const pastaNsis = fileURLToPath(
   new URL("../src-tauri/target/release/bundle/nsis/", import.meta.url),
 );
 
-async function servicoQueFoiEmbutido() {
-  const pastas = await readdir(pastaDeBuild, { withFileTypes: true });
-  const candidatos = pastas
-    .filter((entrada) => entrada.isDirectory() && entrada.name.startsWith("fol-discord-janela-"))
-    .map((entrada) => join(pastaDeBuild, entrada.name, "out", "fol-discord.exe"));
-
-  for (const candidato of candidatos) {
-    try {
-      return await readFile(candidato);
-    } catch {
-      // Há uma pasta por tentativa de compilação; só uma contém o artefato.
-    }
-  }
-  throw new Error("serviço embutido ausente da compilação da janela");
+async function sidecarDoServico() {
+  const arquivos = await readdir(pastaSidecar);
+  const nome = arquivos.find(
+    (arquivo) => arquivo.startsWith("fol-discord-") && arquivo.endsWith(".exe"),
+  );
+  if (!nome) throw new Error("o sidecar do serviço não foi gerado pelo build.rs");
+  return readFile(join(pastaSidecar, nome));
 }
 
-test("o executável da janela carrega o serviço que instala", async () => {
-  // A leitura é binária: procurar o executável inteiro impede publicar uma
-  // janela que apenas conhece o nome do serviço, mas não consegue instalá-lo.
-  const [servicoEmbutido, janelaCompilada] = await Promise.all([
-    servicoQueFoiEmbutido(),
+test("o instalador leva o serviço como sidecar, e a janela não o carrega como dado", async () => {
+  // A leitura é binária dos dois lados. O sidecar precisa ser exatamente o
+  // núcleo compilado — publicar uma janela que só conhece o nome do serviço
+  // continua sendo o defeito que este teste existe para impedir.
+  const [sidecar, nucleoCompilado, janelaCompilada] = await Promise.all([
+    sidecarDoServico(),
+    readFile(nucleoCompiladoCaminho),
     readFile(janela),
   ]);
 
-  assert.ok(servicoEmbutido.length > 1_000_000, "serviço compilado ausente");
-  assert.ok(janelaCompilada.includes(servicoEmbutido), "a janela foi compilada sem o serviço");
+  assert.ok(sidecar.length > 1_000_000, "serviço compilado ausente");
+  assert.ok(sidecar.subarray(0, 2).equals(Buffer.from("MZ")), "o sidecar não é um executável");
+
+  // Tamanho aproximado, não igualdade byte a byte: na release assinada o
+  // empacotador pode carimbar a assinatura no sidecar depois da cópia, e aí os
+  // bytes divergem legitimamente. O que precisa ser impossível é o sidecar ser
+  // outro arquivo qualquer.
+  const diferenca = Math.abs(sidecar.length - nucleoCompilado.length);
+  assert.ok(
+    diferenca < nucleoCompilado.length * 0.05,
+    `o sidecar (${sidecar.length} B) não parece ser o núcleo (${nucleoCompilado.length} B)`,
+  );
+
+  // Um PE completo dentro da seção de dados de outro PE é o padrão que os
+  // motores de antivírus leem como conta-gotas. O sidecar existe justamente
+  // para não precisarmos disso: o instalador entrega o arquivo.
+  assert.ok(
+    !janelaCompilada.includes(sidecar),
+    "a janela voltou a carregar o serviço como blob embutido",
+  );
 });
 
-test("as sondas da janela não podem abrir um terminal visível", async () => {
+test("as sondas da janela não iniciam processo nenhum", async () => {
+  // Antes a leitura periódica do estado chamava `tasklist` com a janela
+  // suprimida. Ela deixou de chamar processo algum: enumerar pela API não
+  // pisca console, não depende do idioma do Windows e tira da árvore de
+  // processos duas chamadas que os antivírus contam como comportamento de
+  // programa malicioso.
   const ponte = await readFile(ponteNativa, "utf8");
   assert.match(
     ponte,
-    /fn servico_rodando\(\) -> bool \{\s*let mut comando = comando_oculto\("tasklist"\);/s,
-    "a leitura periódica do estado iniciaria tasklist com uma janela visível",
+    /fn servico_rodando\(\) -> bool \{\s*crate::processos::esta_rodando\(IMAGEM_DO_SERVICO\)\s*\}/s,
+    "a sonda de estado voltou a depender de um utilitário externo",
   );
+  for (const utilitario of ["tasklist", "taskkill"]) {
+    assert.ok(
+      !ponte.includes(`"${utilitario}"`),
+      `a janela voltou a chamar ${utilitario}`,
+    );
+  }
+});
+
+test("nem o núcleo nem a janela chamam tasklist ou taskkill", async () => {
+  // Enumerar processos e encerrar programa de terceiros por utilitário do
+  // sistema são duas das detecções comportamentais de maior peso em sandbox.
+  // O módulo `processos` faz as duas coisas pela API, sem processo filho.
+  const fontes = await Promise.all(
+    [nucleo, controleDiscord, ponteNativa].map((arquivo) => readFile(arquivo, "utf8")),
+  );
+  for (const fonte of fontes) {
+    for (const utilitario of ["tasklist", "taskkill"]) {
+      assert.ok(!fonte.includes(`"${utilitario}"`), `${utilitario} voltou ao código`);
+    }
+  }
 });
 
 test("o instalador e o desinstalador não podem abrir terminal visível", async () => {
@@ -355,5 +394,46 @@ test("a release pública assina pelo empacotador e verifica os artefatos", async
   const blocoVerificacao = workflow.slice(verificarAssinaturas, publicarSetup);
   assert.ok(blocoVerificacao.includes("target\\release\\fol-discord.exe"));
   assert.ok(blocoVerificacao.includes("fol-discord-janela.exe"));
+  // O sidecar e o binario que roda na maquina de quem baixa; sem ele na lista,
+  // a verificacao aprova uma release cujo servico nao foi conferido.
+  assert.ok(blocoVerificacao.includes("src-tauri\\binaries"));
   assert.ok(blocoVerificacao.includes("Filter '*-setup.exe'"));
+});
+
+test("a release publica o nome de setup que a janela instalada procura", async () => {
+  // A janela só mostra o aviso de atualização se a release trouxer um asset com
+  // o nome que o NSIS carimba. Publicar apenas a cópia de nome estável deixa
+  // quem já instalou preso na versão antiga, sem aviso nenhum — foi o que
+  // aconteceu na v0.2.5, e ninguém percebeu porque falha em silêncio.
+  const [workflow, ponte] = await Promise.all([
+    readFile(releaseWorkflow, "utf8"),
+    readFile(ponteNativa, "utf8"),
+  ]);
+
+  assert.match(
+    ponte,
+    /format!\("FOL-discord_\{versao\}_x64-setup\.exe"\)/,
+    "a janela mudou o nome que procura; ajuste a release junto",
+  );
+  assert.match(
+    workflow,
+    /files:\s*\|[\s\S]*?FOL-discord-setup\.exe[\s\S]*?bundle\/nsis\/\*-setup\.exe/,
+    "a release precisa publicar o nome versionado além da cópia de nome estável",
+  );
+  assert.match(
+    workflow,
+    /\$setup\.Name -ne \$esperado/,
+    "sem a trava, uma tag sem bump de versão quebra o aviso em silêncio",
+  );
+});
+
+test("a release publica soma de verificação e atestado de procedência", async () => {
+  // Sem certificado de assinatura de código, são as duas únicas provas que quem
+  // baixa tem de que o arquivo saiu deste repositório.
+  const workflow = await readFile(releaseWorkflow, "utf8");
+
+  assert.match(workflow, /actions\/attest-build-provenance/);
+  assert.match(workflow, /id-token:\s*write/);
+  assert.match(workflow, /attestations:\s*write/);
+  assert.match(workflow, /SHA256SUMS\.txt/);
 });

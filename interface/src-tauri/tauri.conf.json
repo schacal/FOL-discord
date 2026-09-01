@@ -32,6 +32,12 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "schacal",
+    "copyright": "Copyright (c) 2026 schacal",
+    "homepage": "https://github.com/schacal/FOL-discord",
+    "license": "MIT",
+    "shortDescription": "Devolve a transmissao de tela e a camera do Discord no Brasil",
+    "longDescription": "Corrige o problema do Discord no Brasil fazendo o handshake sair por um IP estrangeiro. Sem VPN, sem conta e sem administrador.",
     "targets": ["nsis"],
     "icon": [
       "icones/32x32.png",

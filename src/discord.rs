@@ -9,8 +9,8 @@ use std::{ffi::OsStr, path::PathBuf, process::Command, time::Duration};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
-/// `tasklist`, `taskkill` e o lançador do Discord são detalhes internos: a
-/// janela do FOL-discord nunca deve revelar esses processos ao usuário.
+/// O lançador do Discord é detalhe interno: a janela do FOL-discord nunca
+/// deve revelar esse processo ao usuário.
 fn comando_oculto(programa: impl AsRef<OsStr>) -> Command {
     let mut comando = Command::new(programa);
     #[cfg(windows)]
@@ -30,19 +30,19 @@ pub fn lancador() -> Option<PathBuf> {
     p.exists().then_some(p)
 }
 
+const IMAGEM: &str = "Discord.exe";
+
 pub fn esta_rodando() -> bool {
-    comando_oculto("tasklist")
-        .args(["/FI", "IMAGENAME eq Discord.exe", "/NH"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains("Discord.exe"))
-        .unwrap_or(false)
+    crate::processos::esta_rodando(IMAGEM)
 }
 
+/// Encerra todas as janelas do Discord e só volta quando elas saíram de fato.
+/// A espera é por handle de processo, não por relógio: reabrir cedo demais faz
+/// o Discord fixar de novo a região errada.
 fn encerrar() {
-    let _ = comando_oculto("taskkill")
-        .args(["/F", "/IM", "Discord.exe"])
-        .output();
-    std::thread::sleep(Duration::from_secs(3));
+    crate::processos::encerrar_por_nome(IMAGEM);
+    // Folga curta para o Squirrel soltar os arquivos antes do relançamento.
+    std::thread::sleep(Duration::from_millis(500));
 }
 
 /// Fecha e reabre o Discord. Devolve `false` quando não há Discord instalado
