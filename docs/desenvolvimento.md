@@ -28,8 +28,17 @@ fol-discord/
 ```
 
 São dois projetos Rust separados. O da raiz é o serviço; o de
-`interface/src-tauri/` é a janela, que **embute uma cópia compilada do serviço**
-no próprio executável — é assim que a primeira abertura instala tudo sozinha.
+`interface/src-tauri/` é a janela. O `build.rs` da janela compila o serviço e o
+entrega ao empacotador como **sidecar**: o instalador NSIS grava
+`fol-discord.exe` ao lado de `fol-discord-janela.exe`, e é de lá que a primeira
+abertura o copia para `%LOCALAPPDATA%\FolDiscord` e o inicia.
+
+Até a v0.2.5 a janela carregava o serviço inteiro como dado (`include_bytes!`)
+e o gravava em disco ao abrir. Um executável completo dentro da seção de dados
+de outro, extraído em tempo de execução, é o desenho que os antivírus chamam de
+*dropper* — e era desnecessário, porque o instalador já entrega o arquivo. A
+cópia embutida sobrou só em `cargo tauri dev`, onde não existe instalador para
+colocar o serviço no lugar.
 
 ## O serviço
 
@@ -56,11 +65,13 @@ npm --prefix interface test
 ```
 
 O segundo comando é a suíte de embalagem: ela confere o artefato compilado, não
-só o código. Verifica que o serviço realmente foi embutido no executável da
-janela, que nenhum processo auxiliar abre terminal preto, que o ícone do
+só o código. Verifica que o serviço saiu como sidecar e **não** voltou a ser
+embutido na janela, que nem o serviço nem a janela chamam `tasklist` ou
+`taskkill`, que nenhum processo auxiliar abre terminal preto, que o ícone do
 programa é a logo ilustrada, que a chave de desinstalação bate com o
-`productName` do `tauri.conf.json`, e que a embalagem produziu um único
-`*-setup.exe`. Rode-a **depois** do build.
+`productName` do `tauri.conf.json`, que a release publica os dois nomes de
+instalador, e que a embalagem produziu um único `*-setup.exe`. Rode-a
+**depois** do build.
 
 ## Ícones
 
@@ -87,46 +98,89 @@ Cinco lugares precisam concordar a cada release:
 | `interface/src-tauri/tauri.conf.json` | `version` |
 | `interface/src/App.tsx` | `VERSAO_PADRAO` |
 
-O último é o que a janela mostra antes de o serviço responder.
+O último é o que a janela mostra antes de o serviço responder. O
+`interface/package-lock.json` acompanha o `package.json`.
+
+A tag **precisa** bater com esses cinco: o NSIS carimba a versão do
+`tauri.conf.json` no nome do instalador, e o workflow recusa publicar se a tag
+pedir outro nome. Sem essa trava, quem já instalou nunca receberia o aviso de
+versão nova.
 
 ## Release
 
 Empurrar uma tag `v*` dispara o `.github/workflows/release.yml`, que compila no
-GitHub Actions e publica **um arquivo só**: o `FOL-discord-setup.exe`. O
-instalador publicado nunca é enviado da máquina de ninguém.
+GitHub Actions e publica a release. O instalador publicado nunca é enviado da
+máquina de ninguém.
 
 ```bash
-git tag -a v0.2.5 -m "v0.2.5"
-git push origin v0.2.5
+git tag -a v0.2.6 -m "v0.2.6"
+git push origin v0.2.6
 ```
+
+Cada release publica:
+
+| Arquivo | Para quê |
+| --- | --- |
+| `FOL-discord-setup.exe` | nome fixo; é o que o botão do README e o `install.ps1` baixam |
+| `FOL-discord_<versão>_x64-setup.exe` | o mesmo arquivo, com o nome que o NSIS carimba; é o que a janela instalada procura para avisar de versão nova |
+| `SHA256SUMS.txt` | a soma do instalador, para quem quer conferir na mão |
+| atestado de procedência | assinado pelo GitHub; amarra o arquivo ao commit e à execução que o produziu |
+
+Antes de empurrar a tag, anote a versão em `CHANGELOG.md` e rode as três
+suítes (`cargo test --release` na raiz, `cargo test` em `interface/src-tauri` e
+`npm --prefix interface test` depois do build).
+
+### Como a janela descobre uma versão nova
+
+Ao abrir, e depois no máximo a cada seis horas, a janela consulta a última
+release pública deste repositório. Ela só avisa se a release for estável (nem
+*draft*, nem *prerelease*), mais nova que a versão instalada, e trouxer o
+instalador **dentro da própria release** — primeiro pelo nome com versão, depois
+pelo nome fixo. O clique no aviso abre o download no navegador; a janela nunca
+baixa nem executa nada sozinha. A lógica e os testes estão em
+`interface/src-tauri/src/servico.rs`.
 
 ### Assinatura do instalador
 
-Tags `v*` só publicam o instalador depois que o núcleo, a janela e o setup NSIS
-passam pela assinatura do Microsoft Artifact Signing. Pull requests e builds da
-branch `main` continuam compilando sem assinar, porque não recebem acesso às
-credenciais do Azure.
+O instalador **sai sem assinatura de código**. Não é escolha: certificado de
+confiança pública custa dinheiro, e as duas rotas mais conhecidas não estão
+abertas para este projeto hoje:
 
-Configure no repositório do GitHub:
+- **Certificado tradicional (OV/EV)** — pago, anual, e ainda assim o
+  SmartScreen só para de avisar depois de o certificado acumular reputação.
+- **Microsoft Artifact Signing (ex-Trusted Signing)** — mensal e mais barato,
+  mas a validação de identidade de pessoa física só é aceita para quem mora
+  nos Estados Unidos ou no Canadá. Pessoa jurídica precisa estar num dos
+  países listados na [documentação](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart),
+  e o Brasil não está.
+
+A rota gratuita que existe para software livre é a
+[**SignPath Foundation**](https://signpath.org/): ela empresta certificado de
+código a projetos de código aberto que atendam aos critérios dela — licença
+aprovada pela OSI, projeto mantido e já lançado, build automatizado e
+verificável a partir do próprio repositório, autenticação em dois fatores para
+quem assina. Este repositório já cumpre a parte técnica; falta a inscrição, que
+é manual e passa por revisão humana.
+
+Enquanto não há certificado, a release publica o que dá para provar sem ele: a
+soma SHA-256 e o atestado de procedência do GitHub. É o que o `install.ps1` e a
+[página de segurança](seguranca.md#conferindo-o-instalador-que-você-baixou)
+usam.
+
+O workflow já sabe assinar quando houver como. Ele procura seis valores no
+repositório do GitHub:
 
 - **Secrets:** `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` e `AZURE_TENANT_ID`.
 - **Variables:** `AZURE_ARTIFACT_SIGNING_ENDPOINT`,
   `AZURE_ARTIFACT_SIGNING_ACCOUNT` e `AZURE_ARTIFACT_SIGNING_PROFILE`.
 
-Sem esses seis valores, uma tag de release falha antes de publicar qualquer
-arquivo.
+Com os seis, a tag instala o `artifact-signing-cli`, assina o núcleo antes de
+empacotá-lo, entrega ao `signCommand` do Tauri a assinatura da janela e do setup
+NSIS, e recusa publicar se qualquer assinatura sair inválida. Sem eles, a
+release **sai mesmo assim**, sem assinatura, avisando no log do workflow — um
+projeto sem nenhum jeito de publicar correção é pior do que um binário sem
+assinatura que admite não ter. Pull requests e builds da branch `main` nunca
+recebem as credenciais.
 
-A identidade do Azure precisa ser uma App Registration dedicada, com um segredo
-de cliente guardado somente nos Secrets do GitHub e a função
-`Artifact Signing Certificate Profile Signer` no perfil de certificado. O
-perfil deve estar validado para confiança pública. A chave privada do
-certificado nunca é guardada no repositório nem entregue ao workflow.
-
-O workflow instala o `artifact-signing-cli` apenas em tags, assina o núcleo antes
-de embuti-lo e entrega ao `signCommand` do Tauri a assinatura da janela depois
-do patch do bundle e do setup NSIS final. Qualquer assinatura ausente ou inválida
-interrompe a publicação. Consulte a [configuração oficial do Artifact
-Signing](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart) e
-a [assinatura para Windows no
-Tauri](https://v2.tauri.app/distribute/sign/windows/#azure-artifact-signing) para
-criar a conta, validar a identidade e limitar as permissões da App Registration.
+Se um dia a assinatura vier pela SignPath em vez do Azure, a etapa a trocar é a
+mesma: o `signCommand` do Tauri e o passo que assina o núcleo.

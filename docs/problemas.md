@@ -107,35 +107,54 @@ o que o programa faz — trocar o proxy do Windows, subir com o PC, buscar lista
 de proxies na internet — descreve, palavra por palavra, um sequestrador de
 tráfego. A diferença é que aqui o código está inteiro à vista.
 
-No [relatório do VirusTotal](https://www.virustotal.com/gui/file/e05c1518783a301a446b992af6430fbe3451c4f407a65aa58fb857f555a7300c)
-do instalador da v0.2.5, 4 dos 71 motores acusam:
+No [relatório do VirusTotal](https://www.virustotal.com/gui/file/7bef02110fd14a27b668139f5f97068ffed60231324687b379cb2898372e93db)
+do instalador da v0.2.6, 4 dos 70 motores acusam:
 
 | Motor | Veredito | O que é |
 | --- | --- | --- |
 | Microsoft | `Trojan:Win32/Wacatac.B!ml` | modelo de aprendizado de máquina; o sufixo `!ml` diz isso |
-| Arctic Wolf | `Unsafe` | reputação, não análise do arquivo |
 | SecureAge | `Malicious` | aprendizado de máquina |
+| Trapmine | `Suspicious.low.ml.score` | aprendizado de máquina, e o próprio nome diz "pontuação baixa" |
 | Bkav Pro | `W32.Malware.…` | hash genérico |
 
 Nenhum é assinatura de família real. Kaspersky, ESET, BitDefender, Sophos,
-Symantec, Avast, Malwarebytes, TrendMicro, Fortinet, McAfee, CrowdStrike,
-SentinelOne e Elastic passam limpo.
+Symantec, Avast, AVG, Avira, Malwarebytes, TrendMicro, Fortinet, McAfee,
+CrowdStrike, SentinelOne, Elastic, Google, Palo Alto e ClamAV passam limpo.
+
+Da v0.2.5 para a v0.2.6 o que dependia do projeto foi feito — o serviço deixou
+de vir escondido dentro da janela, `tasklist` e `taskkill` saíram, os
+executáveis passaram a se identificar. A lista do que mudou e por quê está em
+[Segurança](seguranca.md#se-o-antivírus-acusar). O que sobra é o que só uma
+assinatura de código resolve, e [por que ela ainda não
+existe](seguranca.md#por-que-não-tem-assinatura-de-código) também está lá.
 
 ### O que você pode fazer
 
 1. **Conferir o arquivo** pelo SHA-256 e pelo atestado de procedência — está em
    [Segurança](seguranca.md#conferindo-o-instalador-que-você-baixou).
 2. **Compilar você mesmo** com `cargo build --release` e comparar.
-3. **Ler o código** — são cerca de 1.500 linhas em sete arquivos no serviço.
+3. **Ler o código** — são cerca de 1.600 linhas em oito arquivos no serviço.
 4. **Reportar o falso positivo.** É o único caminho que tira a detecção do banco
    do fabricante, e vale para todo mundo que baixar depois.
+
+### Se o Defender bloqueou o download ou apagou o arquivo
+
+O SmartScreen e o Defender agem em momentos diferentes, e a saída é diferente:
+
+- **No navegador**, "arquivo não baixado com frequência" ou "não é comum baixar
+  este arquivo": clique em *Manter* → *Mostrar mais* → *Manter assim mesmo*.
+  Isso é reputação de download, não detecção.
+- **Ao abrir**, "O Windows protegeu o computador": *Mais informações* →
+  *Executar assim mesmo*. Confira o SHA-256 antes.
+- **O Defender colocou em quarentena**: abra *Segurança do Windows* →
+  *Proteção contra vírus e ameaças* → *Histórico de proteção*, escolha a
+  detecção e use *Ações* → *Permitir*. Depois baixe de novo.
 
 ### Onde reportar falso positivo
 
 | Fabricante | Canal |
 | --- | --- |
 | Microsoft Defender | <https://www.microsoft.com/en-us/wdsi/filesubmission> — escolha *Software developer*, marque **Incorrectly detected as malware** |
-| Arctic Wolf | <https://arcticwolf.com/contact/> |
 | SecureAge | <https://www.secureage.com/support> |
 | Bkav | <https://www.bkav.com/report-false-positive> |
 

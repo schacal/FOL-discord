@@ -98,7 +98,8 @@ Fechar a janela só a esconde na bandeja; a correção continua rodando.
 | **Desinstalar** | abre o desinstalador do Windows e desfaz tudo |
 
 A janela avisa quando sai uma versão nova e abre o download. Ela nunca instala
-nada por conta própria.
+nada por conta própria. Para atualizar, basta abrir o instalador novo por cima:
+ele troca os arquivos e mantém a configuração.
 
 ## Desinstalar
 
@@ -152,22 +153,30 @@ porque não é zero.
 
 ## Antivírus e SmartScreen
 
-O instalador **não tem assinatura de código** — o projeto ainda não tem
-certificado. Por isso duas coisas acontecem e as duas são esperadas:
+O instalador **não tem assinatura de código**. Certificado de confiança pública
+custa dinheiro, e a rota gratuita para software livre ainda está por fazer —
+[o porquê está na página de segurança](docs/seguranca.md#por-que-não-tem-assinatura-de-código).
+Sem assinatura, duas coisas acontecem e as duas são esperadas:
 
 **O SmartScreen mostra "Editor desconhecido".** Clique em *Mais informações* →
 *Executar assim mesmo*, depois de conferir o arquivo (abaixo).
 
 **Alguns antivírus marcam por heurística.** No
-[relatório do VirusTotal](https://www.virustotal.com/gui/file/e05c1518783a301a446b992af6430fbe3451c4f407a65aa58fb857f555a7300c),
-4 dos 71 motores acusam — todos com veredito genérico de aprendizado de máquina
-(`Wacatac.B!ml`, `Unsafe`, `Malicious`), nenhum com assinatura de família real.
-Kaspersky, ESET, BitDefender, Sophos, Symantec, Avast, Malwarebytes, TrendMicro,
-Fortinet, McAfee e CrowdStrike passam limpo.
+[relatório do VirusTotal](https://www.virustotal.com/gui/file/7bef02110fd14a27b668139f5f97068ffed60231324687b379cb2898372e93db),
+4 dos 70 motores acusam — todos com veredito genérico de aprendizado de máquina
+(`Wacatac.B!ml`, `Suspicious.low.ml.score`, `Malicious`), nenhum com assinatura
+de família real. Kaspersky, ESET, BitDefender, Sophos, Symantec, Avast,
+Malwarebytes, TrendMicro, Fortinet, McAfee, CrowdStrike, SentinelOne, Elastic e
+Google passam limpo.
 
 O motivo é o que o programa faz: mexe no proxy do Windows, sobe com o PC e busca
 listas de proxies na internet. É a mesma descrição de um sequestrador de tráfego
 — a diferença é que aqui o código está inteiro à vista.
+
+O que dava para fazer sem certificado já foi feito na v0.2.6: o serviço deixou
+de vir escondido dentro da janela, `tasklist` e `taskkill` saíram do código, e
+os executáveis passaram a se identificar com nome, fabricante e ícone. A lista
+completa está em [Segurança](docs/seguranca.md#se-o-antivírus-acusar).
 
 ### Conferindo o arquivo antes de abrir
 
@@ -196,7 +205,8 @@ de tirar a detecção do banco do fabricante, e ajuda todo mundo que baixa depoi
 | [**Como funciona**](docs/como-funciona.md) | O mecanismo por dentro e os caminhos que não funcionaram |
 | [**Segurança**](docs/seguranca.md) | O que está protegido, o que fica exposto, como verificar |
 | [**Problemas**](docs/problemas.md) | Quando não funciona, e o que olhar |
-| [**Desenvolvimento**](docs/desenvolvimento.md) | Estrutura do repositório, compilar e testar |
+| [**Desenvolvimento**](docs/desenvolvimento.md) | Estrutura do repositório, compilar, testar e publicar |
+| [**Novidades**](CHANGELOG.md) | O que mudou em cada versão |
 
 ## Por que FOL?
 

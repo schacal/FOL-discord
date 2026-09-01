@@ -109,7 +109,7 @@ As dependências de terceiros dela são poucas e todas MIT, e o `.exe` publicado
 
 ## Verificando por conta própria
 
-O código é curto o bastante para ser lido inteiro — cerca de 1.500 linhas em oito arquivos no serviço. Os pontos que valem conferir:
+O código é curto o bastante para ser lido inteiro — cerca de 1.600 linhas em oito arquivos no serviço. Os pontos que valem conferir:
 
 | O que verificar | Onde |
 | --- | --- |
@@ -161,14 +161,47 @@ Get-AuthenticodeSignature "$env:USERPROFILE\Downloads\FOL-discord-setup.exe" | F
 O `install.ps1` já faz as duas primeiras sozinho: compara a soma do que baixou
 com a publicada na release e recusa executar o arquivo se divergir.
 
+## Por que não tem assinatura de código
+
+Porque assinatura de confiança pública custa dinheiro e o projeto não tem
+receita nenhuma. As rotas conhecidas são um certificado anual pago ou o
+Microsoft Artifact Signing, que é mensal — e que, para pessoa física, só aceita
+quem mora nos Estados Unidos ou no Canadá. A rota gratuita para software livre
+é a [SignPath Foundation](https://signpath.org/), que exige inscrição e revisão
+humana; o repositório já atende à parte técnica. Os detalhes estão em
+[Desenvolvimento](desenvolvimento.md#assinatura-do-instalador).
+
+Assinatura, vale dizer, não prova que um programa é inofensivo. Prova quem o
+publicou. O atestado de procedência do GitHub prova a mesma coisa por outro
+caminho — que o arquivo saiu deste repositório, deste commit, desta execução —
+e é o que temos hoje.
+
 ## Se o antivírus acusar
 
 Acontece, e é esperado num programa sem assinatura que troca o proxy do Windows.
 O que cada motor diz, por que diz, e onde reportar como falso positivo está em
 [Problemas](problemas.md#o-antivírus-reclamou-do-executável).
 
-Reportar é o que resolve: detecção genérica de aprendizado de máquina só sai do
-banco do fabricante quando alguém submete a amostra pelo canal de falso positivo.
+O que estava ao nosso alcance sem certificado já foi feito, a partir da v0.2.6:
+
+- **Nada de executável escondido dentro de outro.** A janela não carrega mais o
+  serviço como dado para gravá-lo em disco ao abrir — o instalador o entrega ao
+  lado dela. Era o desenho clássico de *dropper*, e o motivo mais provável dos
+  vereditos genéricos.
+- **Nada de `tasklist` nem `taskkill`.** Achar e encerrar processos é feito
+  pela API do Windows, não por utilitários de linha de comando com console
+  escondida — que é o comportamento que as sandboxes dos antivírus pontuam.
+- **Os dois executáveis se identificam.** Nome do produto, descrição,
+  fabricante, direitos autorais e ícone estão nos recursos de versão do serviço
+  e da janela; um `.exe` sem nada disso é o perfil que os modelos de reputação
+  marcam antes de olhar o que ele faz.
+- **As requisições se identificam.** As listas de proxies são buscadas com
+  `User-Agent` do FOL-discord, não em branco.
+
+O que sobra são vereditos de aprendizado de máquina (`!ml`, `Suspicious`,
+`Malicious`), sem assinatura de família — e esses só saem do banco do
+fabricante quando alguém submete a amostra pelo canal de falso positivo.
+Reportar é o que resolve.
 
 ## Encontrou um problema de segurança?
 
