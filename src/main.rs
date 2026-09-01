@@ -37,6 +37,18 @@ pub fn caminho_log() -> PathBuf {
     pasta_dados().join("fol.log")
 }
 
+/// Marcador escrito pelo serviço quando a piscina tem proxies utilizáveis.
+/// Um arquivo, e não uma linha no log: o log sobrevive entre instalações, e
+/// procurar texto nele fazia a instalação seguinte se declarar pronta na hora,
+/// reiniciando o Discord antes de haver qualquer proxy validado.
+pub fn caminho_marcador() -> PathBuf {
+    pasta_dados().join("pronto")
+}
+
+fn piscina_pronta() -> bool {
+    caminho_marcador().exists()
+}
+
 fn caminho_instalado() -> PathBuf {
     pasta_dados().join("fol-discord.exe")
 }
@@ -103,24 +115,33 @@ fn instalar(reiniciar_discord: bool) -> Result<()> {
     windows::ativar_pac(&url_pac()).context("ligando o proxy automático")?;
     let _ = windows::adicionar_ao_path(&pasta_dados().display().to_string());
 
+    // O marcador é de quem está subindo agora, não da instalação anterior.
+    let _ = std::fs::remove_file(caminho_marcador());
+
     std::process::Command::new(&destino)
         .arg("rodar")
         .spawn()
         .context("subindo o serviço")?;
 
     // A piscina precisa de alguns segundos para validar os primeiros proxies.
-    // Reiniciar o Discord antes disso o faria abrir sem correção.
+    // Reiniciar o Discord antes disso o faria abrir sem correção nenhuma.
     print!("Validando proxies");
     let _ = std::io::Write::flush(&mut std::io::stdout());
-    for _ in 0..12 {
-        std::thread::sleep(Duration::from_secs(5));
+    let mut pronta = false;
+    for _ in 0..15 {
+        std::thread::sleep(Duration::from_secs(4));
         print!(".");
         let _ = std::io::Write::flush(&mut std::io::stdout());
         if porta_ocupada(PORTA_SOCKS) && piscina_pronta() {
+            pronta = true;
             break;
         }
     }
     println!();
+    if !pronta {
+        println!("\nNenhum proxy respondeu a tempo. O serviço continua tentando");
+        println!("a cada 5 minutos — confira depois com `fol-discord status`.");
+    }
 
     println!("\nInstalado.\n");
     println!("  executável : {}", destino.display());
@@ -140,14 +161,6 @@ fn instalar(reiniciar_discord: bool) -> Result<()> {
 
     println!("\nEm um terminal novo, o comando `fol-discord` já funciona sozinho.");
     Ok(())
-}
-
-/// Lê o log para saber se a primeira validação já terminou. É indireto, mas
-/// evita abrir um canal de controle só para isso.
-fn piscina_pronta() -> bool {
-    std::fs::read_to_string(caminho_log())
-        .map(|s| s.contains("proxies estrangeiros validados"))
-        .unwrap_or(false)
 }
 
 fn desinstalar() -> Result<()> {
@@ -246,6 +259,14 @@ fn rodar(modo: Modo) -> Result<()> {
                             }
                             Err(e) => socks::log::linha(&format!("falha ao reabastecer: {e}")),
                         }
+                    }
+
+                    // O marcador reflete o estado real da piscina: some quando
+                    // ela seca, para que `status` não minta.
+                    if p.quantidade() > 0 {
+                        let _ = std::fs::write(caminho_marcador(), b"");
+                    } else {
+                        let _ = std::fs::remove_file(caminho_marcador());
                     }
                     tokio::time::sleep(INTERVALO_MANUTENCAO).await;
                 }

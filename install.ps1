@@ -1,10 +1,10 @@
-# fol-discord — instalador
+# fol-discord - instalador
 #
 # Uso:
 #   irm https://raw.githubusercontent.com/schacal/FOL-discord/main/install.ps1 | iex
 #
-# Baixa o executável mais recente publicado no GitHub, instala em
-# %LOCALAPPDATA%\FolDiscord e liga a correção. Não precisa de administrador.
+# Baixa o executavel mais recente publicado no GitHub, instala em
+# %LOCALAPPDATA%\FolDiscord e liga a correcao. Nao precisa de administrador.
 
 $ErrorActionPreference = "Stop"
 
@@ -13,7 +13,7 @@ $destino = Join-Path $env:LOCALAPPDATA "FolDiscord"
 $exe     = Join-Path $destino "fol-discord.exe"
 
 Write-Host ""
-Write-Host "fol-discord — instalando" -ForegroundColor Cyan
+Write-Host "fol-discord - instalando" -ForegroundColor Cyan
 Write-Host ""
 
 New-Item -ItemType Directory -Force -Path $destino | Out-Null
