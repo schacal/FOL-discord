@@ -275,10 +275,18 @@ fn anexar_console() {
                 OPEN_EXISTING,
             },
             System::Console::{
-                AttachConsole, SetStdHandle, ATTACH_PARENT_PROCESS, STD_ERROR_HANDLE,
-                STD_OUTPUT_HANDLE,
+                AttachConsole, GetStdHandle, SetStdHandle, ATTACH_PARENT_PROCESS,
+                STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
             },
         };
+
+        // Se quem nos chamou já entregou uma saída — um pipe, um arquivo, um
+        // `>` —, ela é a saída correta. Sobrescrevê-la pelo console faria
+        // `fol-discord status > arquivo` gravar nada.
+        let ja_temos = GetStdHandle(STD_OUTPUT_HANDLE);
+        if !ja_temos.is_null() && ja_temos != INVALID_HANDLE_VALUE {
+            return;
+        }
 
         if AttachConsole(ATTACH_PARENT_PROCESS) == 0 {
             return; // sem terminal chamador: rodando pelo autostart
