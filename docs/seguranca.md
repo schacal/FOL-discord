@@ -84,7 +84,7 @@ O código é curto o bastante para ser lido inteiro — cerca de 700 linhas em s
 Para ver ao vivo por onde cada conexão saiu:
 
 ```powershell
-Get-Content "$env:LOCALAPPDATA\FolDiscord\fol.log" -Tail 30
+Get-Content "$env:LOCALAPPDATA\FolDiscord\fol.log" -Tail 30 -Encoding utf8
 ```
 
 Cada linha diz `exterior` ou `direto` e o destino.

@@ -32,7 +32,7 @@ Feche e abra o Discord uma vez. A correção vale a partir da próxima abertura,
 Se continuar, veja por onde as conexões saíram:
 
 ```powershell
-Get-Content "$env:LOCALAPPDATA\FolDiscord\fol.log" -Tail 30
+Get-Content "$env:LOCALAPPDATA\FolDiscord\fol.log" -Tail 30 -Encoding utf8
 ```
 
 **Se aparecem linhas `exterior discord.com:443`** — o encaminhamento está funcionando e o problema é outro. Vale tentar a rede de segurança, que manda todo domínio do Discord por fora:
