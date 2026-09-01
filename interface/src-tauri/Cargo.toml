@@ -1,0 +1,30 @@
+[package]
+name = "fol-discord-janela"
+version = "0.2.3"
+edition = "2021"
+description = "Janela de gerenciamento do FOL-discord"
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+# 2.2 é o mínimo: `show_menu_on_left_click` nasceu nela (antes era
+# `menu_on_left_click`), e é o que faz o clique esquerdo abrir a janela em vez
+# do menu.
+tauri = { version = "2.2", features = ["tray-icon", "image-png"] }
+tauri-plugin-opener = "2"
+tauri-plugin-process = "2"
+tauri-plugin-single-instance = "2"
+winreg = "0.52"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
