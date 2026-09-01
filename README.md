@@ -52,7 +52,7 @@ Este programa contorna esse efeito de forma rápida, sem perda de ping e sem abr
 
 O Discord decide a região da sua sessão pelo IP que enxerga **no momento em que abre**. Essa decisão fica valendo para a sessão inteira, e quando ela sai errada a transmissão de tela e a câmera param.
 
-A gambiarra conhecida era abrir o Discord com VPN ligada e desligar depois. Isto faz o mesmo, sozinho, sem VPN, e só com as conexões que realmente decidem a região.
+A solução manual conhecida era abrir o Discord com VPN ligada e desligar depois. Isto faz o mesmo, sozinho, sem VPN, e só com as conexões que realmente decidem a região.
 
 | Sai por um IP estrangeiro | Sai direto, como sempre |
 | --- | --- |

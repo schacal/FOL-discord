@@ -1,4 +1,4 @@
-//! fol-discord — corrige o bug do Discord no Brasil.
+//! fol-discord — corrige o problema do Discord no Brasil.
 //!
 //! O Discord decide a região da sua sessão pelo IP que enxerga na abertura.
 //! Em vários provedores brasileiros essa decisão sai errada e a transmissão de

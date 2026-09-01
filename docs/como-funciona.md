@@ -1,6 +1,6 @@
 # Como funciona
 
-## O problema
+## O problema no Brasil
 
 O Discord decide a região da sua sessão **no momento em que abre**, a partir do IP que enxerga. Essa decisão fica valendo para a sessão inteira.
 
