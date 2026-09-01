@@ -113,8 +113,8 @@ GitHub Actions e publica a release. O instalador publicado nunca é enviado da
 máquina de ninguém.
 
 ```bash
-git tag -a v0.2.6 -m "v0.2.6"
-git push origin v0.2.6
+git tag -a v0.2.7 -m "v0.2.7"
+git push origin v0.2.7
 ```
 
 Cada release publica:
@@ -132,8 +132,10 @@ suítes (`cargo test --release` na raiz, `cargo test` em `interface/src-tauri` e
 
 ### Como a janela descobre uma versão nova
 
-Ao abrir, e depois no máximo a cada seis horas, a janela consulta a última
-release pública deste repositório. Ela só avisa se a release for estável (nem
+A janela consulta a última release pública deste repositório ao abrir, cada
+vez que é trazida da bandeja para a frente (com folga mínima de dez minutos
+entre consultas, para abrir-e-fechar não virar rajada de requisições) e, de
+resto, a cada seis horas. Ela só avisa se a release for estável (nem
 *draft*, nem *prerelease*), mais nova que a versão instalada, e trouxer o
 instalador **dentro da própria release** — primeiro pelo nome com versão, depois
 pelo nome fixo. O clique no aviso abre o download no navegador; a janela nunca

@@ -108,7 +108,7 @@ de proxies na internet — descreve, palavra por palavra, um sequestrador de
 tráfego. A diferença é que aqui o código está inteiro à vista.
 
 No [relatório do VirusTotal](https://www.virustotal.com/gui/file/7bef02110fd14a27b668139f5f97068ffed60231324687b379cb2898372e93db)
-do instalador da v0.2.6, 4 dos 70 motores acusam:
+de um build da v0.2.6, 4 dos 70 motores acusam:
 
 | Motor | Veredito | O que é |
 | --- | --- | --- |
@@ -127,6 +127,11 @@ executáveis passaram a se identificar. A lista do que mudou e por quê está em
 [Segurança](seguranca.md#se-o-antivírus-acusar). O que sobra é o que só uma
 assinatura de código resolve, e [por que ela ainda não
 existe](seguranca.md#por-que-não-tem-assinatura-de-código) também está lá.
+
+Para ver o relatório **do arquivo exato que você baixou**, pegue a soma do
+`SHA256SUMS.txt` da release e cole na busca do VirusTotal — ou envie o próprio
+arquivo, que é público e não tem nada seu dentro. Se ninguém tiver enviado
+ainda, a busca não acha nada; isso só quer dizer que você é o primeiro.
 
 ### O que você pode fazer
 

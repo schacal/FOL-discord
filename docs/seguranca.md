@@ -82,11 +82,13 @@ desnecessário: o instalador já entrega o arquivo.
 
 Duas consequências que valem dizer em voz alta:
 
-- **A janela consulta somente a última release pública do GitHub ao abrir e,
-  depois, no máximo uma vez a cada seis horas.** A consulta envia a versão do
-  FOL e recebe os metadados públicos da release; não envia atividade do Discord,
-  proxies, conta, nem outro dado da pessoa. Só aparece aviso se houver uma
-  release estável mais nova com o instalador oficial esperado.
+- **A janela consulta somente a última release pública do GitHub.** Ao abrir,
+  cada vez que é trazida da bandeja para a frente (com folga mínima de dez
+  minutos entre consultas) e, de resto, uma vez a cada seis horas. A consulta
+  envia a versão do FOL no `User-Agent` e recebe os metadados públicos da
+  release; não envia atividade do Discord, proxies, conta, nem outro dado da
+  pessoa. Só aparece aviso se houver uma release estável mais nova com o
+  instalador oficial dentro da própria release.
 - **A janela não baixa nem instala atualização sozinha.** Ao clicar no aviso,
   ela abre no navegador o download oficial do setup; a pessoa ainda escolhe se
   quer executar o instalador.

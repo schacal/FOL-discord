@@ -3,6 +3,16 @@
 Cada versão publicada em [Releases](https://github.com/schacal/FOL-discord/releases)
 e o que mudou nela. Datas no formato ano-mês-dia.
 
+## 0.2.7 — 2026-09-01
+
+**Atualização.** A janela consultava a última release ao abrir e depois só de
+seis em seis horas. Como ela passa o dia escondida na bandeja, quem clicava
+nela logo depois de uma release nova não via aviso nenhum. Agora cada vez que
+a janela é trazida para a frente — pelo ícone da bandeja ou por uma segunda
+abertura — ela consulta de novo, com folga mínima de dez minutos entre
+consultas. A consulta continua sendo só a release pública do GitHub; nada da
+pessoa é enviado.
+
 ## 0.2.6 — 2026-09-01
 
 Versão de limpeza: menos motivos para o antivírus reclamar, e o aviso de versão
