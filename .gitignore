@@ -10,3 +10,8 @@
 # saidas de compilacao e configuracao local de editor
 /dist/
 /.claude/
+
+# instrucoes e configuracao de IA, so local
+/CLAUDE.md
+/AGENTS.md
+/.github/copilot-instructions.md
