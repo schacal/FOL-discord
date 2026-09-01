@@ -14,8 +14,21 @@ use std::os::windows::process::CommandExt;
 pub const TAREFA_BANDEJA: &str = "FolDiscord.Bandeja";
 
 const CHAVE_RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-const CHAVE_DESINSTALAR: &str =
-    r"Software\Microsoft\Windows\CurrentVersion\Uninstall\br.com.foldiscord.janela";
+
+/// Onde o setup NSIS registra o desinstalador, em ordem de tentativa.
+///
+/// O template do Tauri usa `productName` na chave (`UNINSTKEY`), não o
+/// `identifier`. Procurar só pelo identificador nunca achava nada, e o botão
+/// Desinstalar da janela instalada morria em "não encontrei o desinstalador"
+/// — que é exatamente o defeito que este vetor conserta. O identificador fica
+/// como segunda tentativa para instalações antigas.
+const CHAVES_DESINSTALAR: &[&str] = &[
+    r"Software\Microsoft\Windows\CurrentVersion\Uninstall\FOL-discord",
+    r"Software\Microsoft\Windows\CurrentVersion\Uninstall\br.com.foldiscord.janela",
+];
+
+/// O NSIS sempre grava o desinstalador com este nome, ao lado do executável.
+const NOME_DESINSTALADOR: &str = "uninstall.exe";
 const MARCADOR_INSTALACAO: &str = ".fol-discord-instalada";
 const NOME_RUN: &str = "FolDiscord";
 
@@ -285,14 +298,43 @@ pub fn desativar_tarefa() -> Result<(), String> {
     Ok(())
 }
 
+fn linha_de_comando_registrada() -> Option<String> {
+    CHAVES_DESINSTALAR.iter().find_map(|chave| {
+        let linha: String = hkcu().open_subkey(chave).ok()?.get_value("UninstallString").ok()?;
+        (!linha.trim().is_empty()).then_some(linha)
+    })
+}
+
+/// O desinstalador que o setup gravou ao lado desta interface.
+///
+/// A chave do registro é a fonte preferida — ela carrega os argumentos que o
+/// setup escolheu. Mas a janela instalada não pode ficar sem botão só porque
+/// alguém limpou o "Adicionar ou remover programas": o `uninstall.exe` ao lado
+/// do executável é o mesmo arquivo, e passa pela mesma conferência de pasta
+/// que já protegia o caminho do registro.
+fn desinstalador_e_argumentos(
+    interface: &Path,
+    registrado: Option<String>,
+) -> Result<(PathBuf, Vec<String>), String> {
+    match registrado {
+        Some(linha) => separar_linha_de_comando(&linha),
+        None => {
+            let vizinho = interface
+                .parent()
+                .ok_or_else(|| "não encontrei a pasta da interface".to_string())?
+                .join(NOME_DESINSTALADOR);
+            if !vizinho.is_file() {
+                return Err("não encontrei o desinstalador registrado pelo setup".into());
+            }
+            Ok((vizinho, Vec::new()))
+        }
+    }
+}
+
 pub fn comando_desinstalador() -> Result<Command, String> {
     let interface = env::current_exe().map_err(|erro| format!("não encontrei a interface atual: {erro}"))?;
-    let linha: String = hkcu()
-        .open_subkey(CHAVE_DESINSTALAR)
-        .map_err(|erro| format!("não encontrei o desinstalador registrado pelo setup: {erro}"))?
-        .get_value("UninstallString")
-        .map_err(|erro| format!("não encontrei o comando do desinstalador: {erro}"))?;
-    let (uninstaller, argumentos) = separar_linha_de_comando(&linha)?;
+    let (uninstaller, argumentos) =
+        desinstalador_e_argumentos(&interface, linha_de_comando_registrada())?;
     if !uninstaller.is_absolute() {
         return Err("o desinstalador registrado não tem caminho absoluto".into());
     }
@@ -376,6 +418,54 @@ mod tests {
         );
         assert!(tarefa.xml.contains("A&amp;B"));
         assert!(!tarefa.xml.contains("A&B</"));
+    }
+
+    #[test]
+    fn procura_o_desinstalador_pela_chave_que_o_setup_realmente_grava() {
+        // O template NSIS do Tauri monta `UNINSTKEY` com o `productName`. Foi
+        // por procurar só pelo `identifier` que o botão Desinstalar parou de
+        // funcionar depois de instalar pelo setup.
+        assert_eq!(
+            CHAVES_DESINSTALAR[0],
+            r"Software\Microsoft\Windows\CurrentVersion\Uninstall\FOL-discord"
+        );
+        assert!(CHAVES_DESINSTALAR
+            .contains(&r"Software\Microsoft\Windows\CurrentVersion\Uninstall\br.com.foldiscord.janela"));
+    }
+
+    #[test]
+    fn sem_registro_usa_o_desinstalador_ao_lado_da_interface() {
+        let root = tempfile::tempdir().unwrap();
+        let interface = root.path().join("fol-discord-janela.exe");
+        std::fs::write(&interface, b"").unwrap();
+
+        assert!(
+            desinstalador_e_argumentos(&interface, None).is_err(),
+            "sem uninstall.exe ao lado não há desinstalador nenhum para abrir"
+        );
+
+        let vizinho = root.path().join("uninstall.exe");
+        std::fs::write(&vizinho, b"").unwrap();
+        let (encontrado, argumentos) = desinstalador_e_argumentos(&interface, None).unwrap();
+        assert_eq!(encontrado, vizinho);
+        assert!(argumentos.is_empty());
+    }
+
+    #[test]
+    fn o_registro_tem_precedencia_sobre_o_vizinho() {
+        let root = tempfile::tempdir().unwrap();
+        let interface = root.path().join("fol-discord-janela.exe");
+        std::fs::write(&interface, b"").unwrap();
+        std::fs::write(root.path().join("uninstall.exe"), b"").unwrap();
+
+        let (encontrado, argumentos) = desinstalador_e_argumentos(
+            &interface,
+            Some(r#""C:\Instalado\uninstall.exe" /P"#.to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(encontrado, PathBuf::from(r"C:\Instalado\uninstall.exe"));
+        assert_eq!(argumentos, vec!["/P"]);
     }
 
     #[test]
