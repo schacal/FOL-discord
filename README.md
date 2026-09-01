@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="FOL-discord — Faz o Link sair do país, e voltar" width="100%">
+  <img src="assets/banner.png" alt="FOL-discord — Faz O Link" width="100%">
 </p>
 
 <p align="center">
