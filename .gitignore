@@ -3,3 +3,6 @@
 
 # handoff de trabalho, so local
 *.local.md
+
+# planejamento interno das sessoes, nao entra no repositorio
+/docs/superpowers/
