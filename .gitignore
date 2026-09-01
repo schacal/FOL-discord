@@ -1,2 +1,5 @@
 /target
 *.log
+
+# handoff de trabalho, so local
+*.local.md
