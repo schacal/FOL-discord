@@ -164,7 +164,10 @@ export const servicoHttp: Servico = {
   },
 
   atualizar: async () => {
-    await pedir("/atualizar", post(), LENTO);
+    const resposta = campos(await pedir("/atualizar", post(), LENTO));
+    const url = texto(resposta.url);
+    if (!url) throw new Error("o serviço não devolveu o download da atualização");
+    return url;
   },
 
   desinstalar: async () => {

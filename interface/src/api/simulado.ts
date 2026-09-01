@@ -194,7 +194,10 @@ export const servicoSimulado: Servico = {
 
   async atualizar() {
     await espera(3200);
-    mundo.temAtualizacao = false;
+    if (!mundo.temAtualizacao) throw new Error("não há atualização disponível");
+    // A pessoa escolhe baixar e executar o setup. Abrir o download não muda a
+    // versão ainda, portanto o aviso continua até a nova instalação abrir.
+    return "https://github.com/schacal/FOL-discord/releases/latest";
   },
 
   async desinstalar() {

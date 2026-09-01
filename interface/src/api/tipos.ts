@@ -31,7 +31,7 @@ export interface Status {
   pac_ligado: boolean;
   proxies_saudaveis: number;
   proxy_em_uso: ProxyEmUso | null;
-  ultima_validacao_utc: string | null;
+  ultima_validacao_utc: string | number | null;
   atualizacao: Atualizacao | null;
   erro_inicializacao: string | null;
 }
@@ -62,7 +62,8 @@ export interface Servico {
   verificar(): Promise<Verificacao>;
   autostart(ligado: boolean): Promise<void>;
   reiniciarDiscord(): Promise<boolean>;
-  atualizar(): Promise<void>;
+  /** Devolve o download oficial que a pessoa escolheu abrir. */
+  atualizar(): Promise<string>;
   desinstalar(): Promise<void>;
 }
 

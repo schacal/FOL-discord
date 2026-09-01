@@ -241,22 +241,20 @@ export default function App() {
 
   async function aplicarAtualizacao() {
     try {
-      await servico.atualizar();
+      const url = await servico.atualizar();
+      const abriu = await abrirNoNavegador(url);
+      if (!abriu) throw new Error("o navegador não abriu");
       setAviso({
         tom: "ok",
-        titulo: "Atualizado",
-        frase: "A versão nova já está valendo.",
+        titulo: "Download aberto",
+        frase: "Quando terminar, abra o instalador para concluir a atualização.",
       });
     } catch {
-      // Sem isto a pastilha para de girar e mais nada acontece: quem clicou
-      // fica sem saber se atualizou.
       setAviso({
         tom: "atencao",
-        titulo: "Não deu para atualizar",
-        frase: "O serviço não respondeu. Tente de novo em alguns instantes.",
+        titulo: "Não deu para abrir a atualização",
+        frase: "Tente de novo em alguns instantes.",
       });
-    } finally {
-      await atualizar();
     }
   }
 

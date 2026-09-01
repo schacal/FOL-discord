@@ -79,8 +79,14 @@ executável.
 
 Duas consequências que valem dizer em voz alta:
 
-- **A janela não busca atualização nem telemetria.** Qualquer navegação externa
-  só acontece quando a pessoa clica no link público do projeto.
+- **A janela consulta somente a última release pública do GitHub ao abrir e,
+  depois, no máximo uma vez a cada seis horas.** A consulta envia a versão do
+  FOL e recebe os metadados públicos da release; não envia atividade do Discord,
+  proxies, conta, nem outro dado da pessoa. Só aparece aviso se houver uma
+  release estável mais nova com o instalador oficial esperado.
+- **A janela não baixa nem instala atualização sozinha.** Ao clicar no aviso,
+  ela abre no navegador o download oficial do setup; a pessoa ainda escolhe se
+  quer executar o instalador.
 - **A janela usa uma ponte nativa local.** Essa ponte lê o estado do registro e
   as linhas de rota do `fol.log`, e aplica as ações da interface. Nada desse
   conteúdo sai do computador.
@@ -92,8 +98,10 @@ As dependências de terceiros dela são poucas e todas MIT, e o `.exe` publicado
 - Não lê nem toca no seu token do Discord.
 - Não modifica arquivo nenhum do Discord. Ele **fecha e reabre** o Discord na instalação, porque a correção só vale a partir da próxima abertura — mas não altera nada dentro dele. Use `--sem-reiniciar` se preferir fazer isso na mão.
 - Não injeta código no Discord (nada de client mod, nada de BetterDiscord).
-- Não coleta telemetria e não envia nada para lugar nenhum além das listas de proxies e do próprio Discord.
-- Não se atualiza sozinho. O binário só muda se você mandar.
+- Não coleta telemetria. A única consulta adicional é a release pública do
+  GitHub, usada exclusivamente para verificar se existe um instalador novo.
+- Não se atualiza sozinho. O binário só muda depois de a pessoa baixar e abrir
+  o instalador indicado pela própria janela.
 - Não pede administrador, e recusar-se a dá-lo não muda nada.
 
 ## Verificando por conta própria

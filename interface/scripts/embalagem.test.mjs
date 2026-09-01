@@ -17,6 +17,8 @@ const hooksNsis = new URL("../src-tauri/windows/hooks.nsh", import.meta.url);
 const nucleo = new URL("../../src/main.rs", import.meta.url);
 const controleDiscord = new URL("../../src/discord.rs", import.meta.url);
 const tela = new URL("../src/App.tsx", import.meta.url);
+const marca = new URL("../src/componentes/Marca.tsx", import.meta.url);
+const logoPrincipal = new URL("../../assets/icons/app.png", import.meta.url);
 const pastaDeBuild = fileURLToPath(
   new URL("../src-tauri/target/release/build/", import.meta.url),
 );
@@ -79,6 +81,24 @@ test("o instalador e o desinstalador não podem abrir terminal visível", async 
       "um comando do núcleo ignorou a execução oculta",
     );
   }
+});
+
+test("a janela usa a logo principal e a bandeja continua dinâmica", async () => {
+  const [marcaFonte, logo, bandeja] = await Promise.all([
+    readFile(marca, "utf8"),
+    readFile(logoPrincipal),
+    readFile(cicloDeVida, "utf8"),
+  ]);
+
+  assert.match(marcaFonte, /app\.png/, "a janela ainda usa a marca SVG antiga");
+  assert.ok(
+    logo.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+    "a logo principal precisa ser um PNG válido",
+  );
+  assert.match(bandeja, /bandeja-operacional\.png/);
+  assert.match(bandeja, /bandeja-pausado\.png/);
+  assert.match(bandeja, /bandeja-sem_proxies\.png/);
+  assert.match(bandeja, /bandeja-parado\.png/);
 });
 
 test("reiniciar Discord não pode aguardar a validação de proxies", async () => {

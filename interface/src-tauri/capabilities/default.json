@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "O mínimo que a janela precisa: mover-se, esconder-se, sair, e abrir o repositório no navegador. Mostrar e focar a janela é o Rust quem faz, ao clicar na bandeja, e chamada de Rust não passa por esta lista.",
+  "windows": ["principal"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-hide",
+    "core:window:allow-start-dragging",
+    "process:allow-exit",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://github.com/schacal/FOL-discord*" }]
+    }
+  ]
+}

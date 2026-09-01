@@ -21,6 +21,6 @@ export const servicoTauri: Servico = {
   verificar: () => chamar<Verificacao>("verificar_servico"),
   autostart: (ligado) => chamar<void>("definir_autostart", { ligado }),
   reiniciarDiscord: () => chamar<boolean>("reiniciar_discord"),
-  atualizar: () => chamar<void>("atualizar_servico"),
+  atualizar: () => chamar<string>("atualizar_servico"),
   desinstalar: () => chamar<void>("iniciar_desinstalacao"),
 };

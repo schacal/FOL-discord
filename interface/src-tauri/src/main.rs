@@ -112,8 +112,8 @@ fn reiniciar_discord() -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn atualizar_servico() -> Result<(), String> {
-    servico::garantir_servico(false, false)
+fn atualizar_servico() -> Result<String, String> {
+    servico::url_da_atualizacao()
 }
 
 #[tauri::command]
@@ -173,6 +173,7 @@ fn main() {
             definir_estado_bandeja
         ])
         .setup(move |app| {
+            servico::iniciar_verificacao_atualizacao();
             let abrir = MenuItem::with_id(app, "abrir", "Abrir", true, None::<&str>)?;
             let pausar = MenuItem::with_id(app, "pausar", "Pausar", true, None::<&str>)?;
             let separador = PredefinedMenuItem::separator(app)?;

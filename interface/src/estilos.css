@@ -1,0 +1,172 @@
+@import "tailwindcss";
+
+/*
+ * Inter variável, só o subconjunto latino, e a versão com o eixo `opsz`.
+ *
+ * A janela usa de 11,5 px (rótulos em versalete) a 22 px (título do status).
+ * O eixo óptico é justamente o que faz esse intervalo caber numa fonte só:
+ * abre o espacejamento e engrossa as hastes no miúdo, e aperta no grande.
+ * Custa 25 KB a mais que a variante sem `opsz` e paga em legibilidade.
+ *
+ * Só o latino: o português não sai dele, e as outras seis fatias iam junto
+ * no `.exe` sem nunca serem desenhadas.
+ */
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url("@fontsource-variable/inter/files/inter-latin-opsz-normal.woff2")
+    format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/*
+ * Paleta do handoff, com uma correção de contraste.
+ *
+ * O `#78716C` original do texto secundário dá 4,2:1 sobre o off-white, abaixo
+ * do mínimo legível para corpo de texto. O `#57534E` dá 7:1 e continua
+ * claramente secundário. O tom antigo sobrevive como `texto3`, só para o que
+ * é de fato incidental.
+ *
+ * `static` porque nem toda cor daqui vira classe: as cinco tintas do orbe são
+ * lidas por `var()` dentro de um filtro SVG, e sem isso o Tailwind poda as que
+ * nenhum utilitário usa — o orbe fica preto, sem erro nenhum de build.
+ */
+@theme static {
+  --color-fundo: #faf9f7;
+  --color-superficie: #ffffff;
+  --color-borda: #e8e5e0;
+  --color-texto: #1c1b1a;
+  --color-texto2: #57534e;
+  --color-texto3: #8a827a;
+  --color-destaque: #4f46e5;
+  --color-ok: #16a34a;
+  --color-atencao: #d97706;
+  --color-perigo: #dc2626;
+  /* Só o orbe pausado usa. Não é texto: o mínimo de contraste de corpo não
+     se aplica, e é justamente o cinza que diz "vivo, sem fazer nada". */
+  --color-neutro: #78716c;
+
+  --font-sans: "Inter Variable", "Inter", "Segoe UI Variable Text", "Segoe UI",
+    system-ui, -apple-system, sans-serif;
+
+  --shadow-cartao: 0 1px 2px rgb(28 27 26 / 0.04), 0 1px 3px rgb(28 27 26 / 0.06);
+  --shadow-janela: 0 12px 40px rgb(28 27 26 / 0.18), 0 2px 8px rgb(28 27 26 / 0.08);
+}
+
+html,
+body,
+#raiz {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--color-texto);
+  background: transparent;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+
+  /* `cv05` dá cauda ao "l" e `cv08` dá serifas ao "I": sem isso,
+     `latency.discord.media` e `Illb` viram borrão de hastes iguais. */
+  font-feature-settings: "cv05" 1, "cv08" 1;
+  font-optical-sizing: auto;
+
+  /* Aplicativo de janela: nada de arrastar imagem nem selecionar texto solto. */
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
+
+/* Fora do Tauri a janela é desenhada sobre um fundo neutro, no tamanho real,
+   para que o que se vê no navegador seja o que se vê no aplicativo. */
+html:not(.tauri) body {
+  background: #dedbd6;
+}
+
+#raiz {
+  display: grid;
+  place-items: center;
+}
+
+html.tauri #raiz {
+  place-items: stretch;
+}
+
+/* No navegador, a barra de testes fica sob a janela. */
+html:not(.tauri) #raiz {
+  grid-auto-rows: max-content;
+  align-content: center;
+  gap: 14px;
+}
+
+/* O que dá para copiar: host de conexão e o link do repositório. É o que
+   alguém cola numa issue. */
+.selecionavel {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+/* Números que atualizam sozinhos não podem dançar de largura. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "cv05" 1, "cv08" 1;
+}
+
+.rotulo {
+  font-size: 11.5px;
+  font-weight: 620;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-texto2);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-destaque);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Barra de rolagem só da lista de conexões, discreta. */
+.rolagem {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-borda) transparent;
+}
+.rolagem::-webkit-scrollbar {
+  width: 8px;
+}
+.rolagem::-webkit-scrollbar-thumb {
+  background: var(--color-borda);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.rolagem::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes girar {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.girando {
+  animation: girar 0.7s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

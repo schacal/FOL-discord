@@ -127,9 +127,9 @@ que trata.
   tarefa com seu próprio caminho instalado e `--bandeja`; uma tarefa de mesmo
   nome com outra ação é conflito, nunca um falso “ligado”.
 
-- **A marca é um "L" com a ponta virando** — o L de "Faz o L" e o desenho do
-  que o programa faz. Mesmo traço na janela e na bandeja, onde ele muda de cor
-  conforme o estado.
+- **A logo da janela é a marca principal ilustrada** — o L de "Faz o L" e o
+  desenho do que o programa faz. A bandeja mantém o L compacto, que muda de
+  cor conforme o estado para continuar funcionando como sinal rápido.
 
 - **A lista de conexões mostra o que cada conexão é, não só o endereço.**
   `c-gru18-6fa2a6cb.discord.media` não diz nada a quem só quer transmitir a
