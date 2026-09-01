@@ -33,7 +33,16 @@ try {
 }
 
 Write-Host "[2/3] Baixando..."
-Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
+# Baixa para um temporario primeiro: se a rede falhar no meio, a instalacao
+# que ja existe continua intacta.
+$tmp = "$exe.novo"
+Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
+
+# O servico em execucao mantem o proprio .exe travado, entao ele precisa sair
+# antes da troca. Sem isso, reinstalar por cima falha com "arquivo em uso".
+Get-Process fol-discord -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Seconds 2
+Move-Item -Path $tmp -Destination $exe -Force
 
 Write-Host "[3/3] Ligando a correcao e reiniciando o Discord..."
 & $exe instalar
