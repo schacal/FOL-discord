@@ -44,13 +44,18 @@ anterior ou de outro `.exe` ao lado.
 ## Ícones
 
 ```bash
+npx tauri icon ../assets/icons/app.png -o src-tauri/icones
 node scripts/icones.mjs
-npx tauri icon src-tauri/icones/fonte.png -o src-tauri/icones
 ```
 
-O primeiro comando desenha a marca — o "L" que sai e volta — e as quatro cores
-de bandeja. O segundo vira o conjunto de ícones do Windows. Só rode se mexer na
-marca; os arquivos já estão no repositório.
+O primeiro comando gera o ícone do programa — janela, barra de tarefas, atalho
+e instalador — a partir da **mesma logo ilustrada que o cabeçalho da janela
+mostra**, `assets/icons/app.png`. O segundo desenha as quatro cores da bandeja,
+que continuam sendo o "L" por fórmula porque precisam mudar de cor por estado.
+
+O `tauri icon` também escreve pastas de iOS e Android; este projeto é só
+Windows, então elas são descartadas. Só rode se mexer na marca; os arquivos já
+estão no repositório.
 
 ## Como isto conversa com o serviço
 

@@ -1,7 +1,10 @@
 /**
- * Gera os PNGs compactos da bandeja a partir do "L" que sai e volta. A logo
- * principal da janela é o asset ilustrado em `assets/icons/app.png` e fica
- * separada porque a bandeja precisa continuar mudando de cor por estado.
+ * Gera os PNGs compactos da bandeja a partir do "L" que sai e volta.
+ *
+ * O ícone do programa — janela, barra de tarefas, atalho e instalador — é a
+ * logo ilustrada de `assets/icons/app.png`, gerada com `npx tauri icon`. Só a
+ * bandeja continua desenhada por fórmula, porque ela muda de cor por estado e
+ * precisa continuar legível em 16 px.
  *
  * Sem dependência nenhuma: rasteriza por distância (cápsulas e retângulo
  * arredondado) e escreve o PNG na mão, com o zlib que já vem no Node.
@@ -157,9 +160,9 @@ const escrever = (nome, lado, cor) => {
   console.log(`  ${nome}  ${lado}x${lado}`);
 };
 
-console.log("marca do aplicativo:");
-escrever("fonte.png", 1024, CORES.destaque);
-
+// O ícone do aplicativo não sai daqui: ele é a logo ilustrada de
+// `assets/icons/app.png`, a mesma que a janela mostra no cabeçalho. Este
+// script desenha só a bandeja, que precisa de uma cor por estado.
 console.log("bandeja:");
 for (const estado of ["operacional", "pausado", "sem_proxies", "parado"]) {
   escrever(`bandeja-${estado}.png`, 64, CORES[estado]);
