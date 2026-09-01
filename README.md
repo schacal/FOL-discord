@@ -77,10 +77,10 @@ Abra o **PowerShell** e cole:
 irm https://raw.githubusercontent.com/schacal/FOL-discord/main/install.ps1 | iex
 ```
 
-Esse é o caminho avançado, só de serviço por linha de comando. Ele baixa o
-executável mais recente, instala em `%LOCALAPPDATA%\FolDiscord` e mantém o
-autostart legado em `Run`. Para a experiência completa de janela, bandeja e
-desinstalação pelo Windows, prefira o instalador acima.
+Instala exatamente o mesmo programa, só que sem o assistente: ele baixa o
+`FOL-discord-setup.exe` da versão mais recente, roda em modo silencioso e abre
+a janela no fim. Serve para quem prefere o terminal ou para instalar em vários
+computadores de uma vez.
 
 A partir daí funciona por conta própria — em todo reinício do PC, em toda abertura do Discord, e nas reconexões que ele faz sozinho no meio do uso. Até você desinstalar.
 
@@ -178,12 +178,9 @@ nunca baixa nem instala nada por conta própria: o aviso só abre o download.
 
 Todas as versões, com as notas de cada uma, ficam na
 [**página de releases**](https://github.com/schacal/FOL-discord/releases). Cada
-release traz dois arquivos, sempre com os mesmos nomes:
-
-| Arquivo | Para quem |
-| --- | --- |
-| `FOL-discord-setup.exe` | **A maioria das pessoas.** É o instalador com a janela — é para ele que o botão do topo aponta |
-| `fol-discord.exe` | Só o serviço de linha de comando, sem janela — é o que o `install.ps1` baixa |
+release traz um arquivo só, sempre com o mesmo nome: `FOL-discord-setup.exe`,
+o instalador. Ele já vem com a janela, a bandeja e o serviço dentro — não há
+nada para baixar em separado.
 
 Para voltar a uma versão anterior, baixe o instalador dela na página de releases
 e abra: ele instala por cima da que já está no computador.
@@ -228,7 +225,7 @@ fol-discord/
 cargo build --release
 ```
 
-Sai em `target/release/fol-discord.exe`. Os binários publicados em *Releases* são compilados pelo GitHub Actions a partir deste repositório — não são enviados da máquina de ninguém.
+Sai em `target/release/fol-discord.exe`. O instalador publicado em *Releases* é compilado pelo GitHub Actions a partir deste repositório — não é enviado da máquina de ninguém.
 
 ```bash
 cargo test
