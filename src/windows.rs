@@ -1,16 +1,35 @@
 //! As duas únicas marcas que deixamos no sistema: o proxy automático e o
 //! autostart. Ambas em HKCU, sem administrador, e ambas removíveis.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
+use std::{
+    ffi::OsStr,
+    path::Path,
+    process::{Command, Stdio},
+};
 use winreg::{enums::*, RegKey, RegValue};
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 const CHAVE_INTERNET: &str = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
 const CHAVE_RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const NOME_RUN: &str = "FolDiscord";
 const BACKUP: &str = "AutoConfigURL_backup_FolDiscord";
+const TAREFA_BANDEJA: &str = "FolDiscord.Bandeja";
 
 fn hkcu() -> RegKey {
     RegKey::predef(HKEY_CURRENT_USER)
+}
+
+fn comando_oculto(programa: impl AsRef<OsStr>) -> Command {
+    let mut comando = Command::new(programa);
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        comando.creation_flags(CREATE_NO_WINDOW);
+    }
+    comando
 }
 
 /// Aponta o proxy automático do Windows para o nosso PAC, guardando o valor
@@ -58,9 +77,66 @@ pub fn ativar_autostart(comando: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn desativar_autostart() -> Result<()> {
+fn entrada_run_e_do_fol(valor: &str, servico: &Path) -> bool {
+    valor
+        .trim()
+        .eq_ignore_ascii_case(&format!("\"{}\" rodar", servico.display()))
+}
+
+pub fn validar_autostart_do_fol(servico: &Path) -> Result<()> {
+    let Ok(chave) = hkcu().open_subkey(CHAVE_RUN) else {
+        return Ok(());
+    };
+    let Ok(valor) = chave.get_value::<String, _>(NOME_RUN) else {
+        return Ok(());
+    };
+    if !entrada_run_e_do_fol(&valor, servico) {
+        bail!("a entrada Run\\FolDiscord não pertence ao serviço instalado pelo FOL-discord")
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn comandos_de_remocao_autostart() -> Vec<String> {
+    vec![
+        format!("schtasks /delete /tn {TAREFA_BANDEJA} /f"),
+        format!(r"HKCU\{CHAVE_RUN}\{NOME_RUN}"),
+    ]
+}
+
+fn remover_tarefa_bandeja() -> Result<()> {
+    let saida = comando_oculto("schtasks")
+        .args(["/delete", "/tn", TAREFA_BANDEJA, "/f"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context("executando a remoção da tarefa de bandeja")?;
+    if saida.success() {
+        return Ok(());
+    }
+
+    let existe = comando_oculto("schtasks")
+        .args(["/query", "/tn", TAREFA_BANDEJA])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(true);
+    if existe {
+        bail!("não consegui remover a tarefa {TAREFA_BANDEJA}")
+    }
+    Ok(())
+}
+
+pub fn desativar_autostart(servico: &Path) -> Result<()> {
+    validar_autostart_do_fol(servico)?;
+    remover_tarefa_bandeja()?;
     if let Ok(k) = hkcu().open_subkey_with_flags(CHAVE_RUN, KEY_ALL_ACCESS) {
-        let _ = k.delete_value(NOME_RUN);
+        if let Ok(valor) = k.get_value::<String, _>(NOME_RUN) {
+            if entrada_run_e_do_fol(&valor, servico) {
+                k.delete_value(NOME_RUN)?;
+            }
+        }
     }
     Ok(())
 }
@@ -187,5 +263,13 @@ mod tests {
             vtype: REG_EXPAND_SZ,
         };
         assert_eq!(utf16_para_texto(&v), s);
+    }
+
+    #[test]
+    fn remover_autostart_remove_task_e_run_legado_do_fol() {
+        let comandos = comandos_de_remocao_autostart();
+        assert!(comandos
+            .iter()
+            .any(|comando| comando.contains("FolDiscord.Bandeja")));
     }
 }

@@ -17,12 +17,32 @@ mod windows;
 
 use anyhow::{Context, Result};
 use routing::Modo;
-use std::{path::PathBuf, time::Duration};
+use std::{ffi::OsStr, path::PathBuf, process::Command, time::Duration};
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 const PORTA_SOCKS: u16 = 9250;
 const PORTA_PAC: u16 = 9251;
 const MINIMO_SAUDAVEIS: usize = 3;
 const INTERVALO_MANUTENCAO: Duration = Duration::from_secs(300);
+
+#[derive(Debug, PartialEq, Eq)]
+struct OpcoesInstalar {
+    reiniciar_discord: bool,
+    criar_run_legado: bool,
+}
+
+fn opcoes_instalar(args: &[String]) -> OpcoesInstalar {
+    OpcoesInstalar {
+        reiniciar_discord: !args.iter().any(|arg| arg == "--sem-reiniciar"),
+        criar_run_legado: !args.iter().any(|arg| arg == "--sem-autostart"),
+    }
+}
+
+fn manter_arquivos(args: &[String]) -> bool {
+    args.iter().any(|arg| arg == "--manter-arquivos")
+}
 
 fn url_pac() -> String {
     format!("http://127.0.0.1:{PORTA_PAC}/proxy.pac")
@@ -53,6 +73,19 @@ fn caminho_instalado() -> PathBuf {
     pasta_dados().join("fol-discord.exe")
 }
 
+/// Todo processo auxiliar nasce sem console. O núcleo é executado tanto pelo
+/// PowerShell quanto pela janela; neste último caso, ferramentas como
+/// `taskkill` criariam uma caixa preta curta se não receberem esta flag.
+fn comando_oculto(programa: impl AsRef<OsStr>) -> Command {
+    let mut comando = Command::new(programa);
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        comando.creation_flags(CREATE_NO_WINDOW);
+    }
+    comando
+}
+
 fn main() -> Result<()> {
     anexar_console();
 
@@ -68,12 +101,11 @@ fn main() -> Result<()> {
         .map(|s| s.as_str())
         .unwrap_or("ajuda");
 
-    let reiniciar_discord = !args.iter().any(|a| a == "--sem-reiniciar");
-
     match comando {
-        "instalar" => instalar(reiniciar_discord),
-        "desinstalar" => desinstalar(),
+        "instalar" => instalar(opcoes_instalar(&args)),
+        "desinstalar" => desinstalar(manter_arquivos(&args)),
         "status" => status(),
+        "reiniciar-discord" => reiniciar_discord(),
         "rodar" => rodar(modo),
         _ => {
             ajuda();
@@ -89,17 +121,20 @@ fn ajuda() {
          fol-discord instalar      liga a correção, reinicia o Discord e sobe com o Windows\n  \
          fol-discord desinstalar   remove tudo, sem deixar rastro\n  \
          fol-discord status        mostra o estado atual\n  \
+         fol-discord reiniciar-discord fecha e abre só o Discord\n  \
          fol-discord rodar         roda em primeiro plano (para depurar)\n\n\
          Opções:\n  \
          --sem-reiniciar           não mexe no Discord aberto; a correção vale na\n                            \
          próxima vez que você abrir\n  \
+         --sem-autostart           não cria a entrada Run legada (uso do setup)\n  \
+         --manter-arquivos         limpa a configuração sem apagar a pasta instalada\n  \
          --tudo-discord            manda todo domínio do Discord pro exterior\n                            \
          (use só se a correção padrão não bastar)\n",
         env!("CARGO_PKG_VERSION")
     );
 }
 
-fn instalar(reiniciar_discord: bool) -> Result<()> {
+fn instalar(opcoes: OpcoesInstalar) -> Result<()> {
     let destino = caminho_instalado();
     std::fs::create_dir_all(pasta_dados()).context("criando a pasta de dados")?;
 
@@ -110,17 +145,19 @@ fn instalar(reiniciar_discord: bool) -> Result<()> {
         std::fs::copy(&atual, &destino).context("copiando o executável")?;
     }
 
-    windows::ativar_autostart(&format!("\"{}\" rodar", destino.display()))
-        .context("registrando o autostart")?;
+    if opcoes.criar_run_legado {
+        windows::ativar_autostart(&format!("\"{}\" rodar", destino.display()))
+            .context("registrando o autostart")?;
+    }
     windows::ativar_pac(&url_pac()).context("ligando o proxy automático")?;
     let _ = windows::adicionar_ao_path(&pasta_dados().display().to_string());
 
     // O marcador é de quem está subindo agora, não da instalação anterior.
     let _ = std::fs::remove_file(caminho_marcador());
 
-    // Sem isto o serviço herda o console de quem instalou e passa a escrever
-    // suas linhas de log por cima da saída dos comandos do usuário.
-    std::process::Command::new(&destino)
+    // Mesmo o processo principal é criado sem console: o instalador pode ter
+    // sido chamado pela janela, pelo autostart ou pelo PowerShell.
+    comando_oculto(&destino)
         .arg("rodar")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -150,14 +187,25 @@ fn instalar(reiniciar_discord: bool) -> Result<()> {
     println!("\nInstalado.\n");
     println!("  executável : {}", destino.display());
     println!("  log        : {}", caminho_log().display());
-    println!("  autostart  : sim");
+    println!(
+        "  autostart  : {}",
+        if opcoes.criar_run_legado {
+            "sim"
+        } else {
+            "gerenciado pela interface"
+        }
+    );
     println!("  PAC        : {}", url_pac());
 
-    if reiniciar_discord {
+    if opcoes.reiniciar_discord {
         match discord::reiniciar() {
             Ok(true) => println!("\nDiscord reiniciado. Já está valendo."),
-            Ok(false) => println!("\nDiscord não encontrado — a correção vale na próxima vez que você abrir."),
-            Err(e) => println!("\nNão consegui reiniciar o Discord ({e}). Feche e abra ele uma vez."),
+            Ok(false) => println!(
+                "\nDiscord não encontrado — a correção vale na próxima vez que você abrir."
+            ),
+            Err(e) => {
+                println!("\nNão consegui reiniciar o Discord ({e}). Feche e abra ele uma vez.")
+            }
         }
     } else {
         println!("\nFeche e abra o Discord uma vez.");
@@ -167,18 +215,28 @@ fn instalar(reiniciar_discord: bool) -> Result<()> {
     Ok(())
 }
 
-fn desinstalar() -> Result<()> {
+fn desinstalar(manter_arquivos: bool) -> Result<()> {
+    windows::validar_autostart_do_fol(&caminho_instalado())?;
     windows::desativar_pac().context("devolvendo o proxy automático")?;
-    windows::desativar_autostart().context("removendo o autostart")?;
+    windows::desativar_autostart(&caminho_instalado()).context("removendo o autostart")?;
     let _ = windows::remover_do_path(&pasta_dados().display().to_string());
     encerrar_outras_instancias();
 
     // Fecha o Discord sem reabrir: reabrir agora, com o proxy já desligado, é
     // exatamente o que o usuário quer — mas deixamos a escolha com ele.
     let estava_aberto = discord::encerrar_se_aberto();
-    let _ = std::fs::remove_dir_all(pasta_dados());
+    if !manter_arquivos {
+        let _ = std::fs::remove_dir_all(pasta_dados());
+    }
 
-    println!("Removido. O proxy automático do Windows voltou ao que era antes.");
+    println!(
+        "{} O proxy automático do Windows voltou ao que era antes.",
+        if manter_arquivos {
+            "Configuração removida; os arquivos foram preservados para o setup."
+        } else {
+            "Removido."
+        }
+    );
     if estava_aberto {
         println!("O Discord foi fechado. Abra de novo e ele já sai pelo seu IP normal.");
     } else {
@@ -202,11 +260,22 @@ fn status() -> Result<()> {
     Ok(())
 }
 
+/// Reinicia somente o Discord. Não passa pela instalação nem aguarda a
+/// validação da piscina: a interface usa este caminho quando o serviço já
+/// está em execução.
+fn reiniciar_discord() -> Result<()> {
+    match discord::reiniciar()? {
+        true => println!("Discord reiniciado."),
+        false => println!("Discord não encontrado."),
+    }
+    Ok(())
+}
+
 /// Encerra cópias antigas do serviço — e só elas. O filtro por PID existe
 /// porque o instalador tem o mesmo nome de imagem e mataria a si próprio.
 fn encerrar_outras_instancias() {
     let eu = std::process::id();
-    let _ = std::process::Command::new("taskkill")
+    let _ = comando_oculto("taskkill")
         .args([
             "/F",
             "/IM",
@@ -331,5 +400,45 @@ fn anexar_console() {
             SetStdHandle(STD_OUTPUT_HANDLE, saida);
             SetStdHandle(STD_ERROR_HANDLE, saida);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn setup_da_interface_instala_o_servico_sem_run_legado() {
+        assert_eq!(
+            opcoes_instalar(&[
+                "instalar".into(),
+                "--sem-reiniciar".into(),
+                "--sem-autostart".into(),
+            ]),
+            OpcoesInstalar {
+                reiniciar_discord: false,
+                criar_run_legado: false,
+            },
+        );
+    }
+
+    #[test]
+    fn cli_sem_novas_opcoes_mantem_o_autostart_legado() {
+        assert_eq!(
+            opcoes_instalar(&["instalar".into()]),
+            OpcoesInstalar {
+                reiniciar_discord: true,
+                criar_run_legado: true,
+            },
+        );
+    }
+
+    #[test]
+    fn desinstalar_com_manter_arquivos_nao_remove_a_pasta() {
+        assert!(manter_arquivos(&[
+            "desinstalar".into(),
+            "--manter-arquivos".into()
+        ]));
+        assert!(!manter_arquivos(&["desinstalar".into()]));
     }
 }
