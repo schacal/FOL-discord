@@ -94,6 +94,13 @@ fn caminho_pronto() -> PathBuf {
     pasta_dados().join("pronto")
 }
 
+/// Arquivo de duas mãos: o serviço carimba aqui cada passada de manutenção da
+/// piscina (de cinco em cinco minutos, desde o boot) e o botão "Verificar
+/// agora" carimba a checagem que a pessoa pediu. A janela só lê.
+///
+/// Enquanto só o botão escrevia, "Última checagem" ficava em travessão para
+/// quem nunca clicava — e um travessão ali quer dizer "ninguém checou", que
+/// não era verdade.
 fn caminho_ultima_validacao() -> PathBuf {
     pasta_dados().join("ultima-validacao-ms")
 }

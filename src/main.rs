@@ -65,8 +65,33 @@ pub fn caminho_marcador() -> PathBuf {
     pasta_dados().join("pronto")
 }
 
+/// Instante da última passada de manutenção da piscina, em milissegundos de
+/// época. É o que a janela mostra em "Última checagem".
+///
+/// Antes só o botão "Verificar agora" escrevia aqui, então quem nunca clicava
+/// via um travessão para sempre — mesmo com o serviço checando a piscina de
+/// cinco em cinco minutos desde o boot. O serviço é quem sabe a hora da
+/// checagem, então é ele quem carimba.
+pub fn caminho_ultima_validacao() -> PathBuf {
+    pasta_dados().join("ultima-validacao-ms")
+}
+
 fn piscina_pronta() -> bool {
     caminho_marcador().exists()
+}
+
+fn milissegundos_agora() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
+
+/// Carimba a passada de manutenção que acabou de terminar. Um disco ocupado
+/// não pode derrubar o laço: no pior caso a janela mostra a checagem anterior.
+fn registrar_checagem_em(caminho: &std::path::Path, instante: u128) {
+    let _ = std::fs::create_dir_all(caminho.parent().unwrap_or(caminho));
+    let _ = std::fs::write(caminho, format!("{instante}\n"));
 }
 
 fn caminho_instalado() -> PathBuf {
@@ -152,8 +177,11 @@ fn instalar(opcoes: OpcoesInstalar) -> Result<()> {
     windows::ativar_pac(&url_pac()).context("ligando o proxy automático")?;
     let _ = windows::adicionar_ao_path(&pasta_dados().display().to_string());
 
-    // O marcador é de quem está subindo agora, não da instalação anterior.
+    // O marcador é de quem está subindo agora, não da instalação anterior — e
+    // a mesma regra vale para a hora da última checagem: mostrar "há 3 d" numa
+    // instalação recém-feita seria a janela mentindo sobre si mesma.
     let _ = std::fs::remove_file(caminho_marcador());
+    let _ = std::fs::remove_file(caminho_ultima_validacao());
 
     // Mesmo o processo principal é criado sem console: o instalador pode ter
     // sido chamado pela janela, pelo autostart ou pelo PowerShell.
@@ -341,6 +369,11 @@ fn rodar(modo: Modo) -> Result<()> {
                     } else {
                         let _ = std::fs::remove_file(caminho_marcador());
                     }
+
+                    // A checagem aconteceu — inclusive quando não achou nada.
+                    // Um travessão em "Última checagem" tem que querer dizer
+                    // "o serviço não olhou", não "o serviço olhou e falhou".
+                    registrar_checagem_em(&caminho_ultima_validacao(), milissegundos_agora());
                     tokio::time::sleep(INTERVALO_MANUTENCAO).await;
                 }
             }
@@ -440,5 +473,38 @@ mod tests {
             "--manter-arquivos".into()
         ]));
         assert!(!manter_arquivos(&["desinstalar".into()]));
+    }
+
+    #[test]
+    fn a_manutencao_carimba_a_hora_que_a_janela_le() {
+        let diretorio = tempfile::tempdir().unwrap();
+        let caminho = diretorio.path().join("sub").join("ultima-validacao-ms");
+
+        // A pasta ainda não existe: o carimbo tem que criá-la, senão a
+        // primeira checagem depois de uma instalação limpa se perde.
+        registrar_checagem_em(&caminho, 1_725_000_123_456);
+
+        // O mesmo formato que a ponte da janela sabe ler: milissegundos de
+        // época em texto, com a quebra de linha final.
+        assert_eq!(
+            std::fs::read_to_string(&caminho).unwrap(),
+            "1725000123456\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&caminho)
+                .unwrap()
+                .trim()
+                .parse::<u64>()
+                .unwrap(),
+            1_725_000_123_456
+        );
+    }
+
+    #[test]
+    fn a_janela_e_o_servico_apontam_para_o_mesmo_arquivo_de_checagem() {
+        assert_eq!(
+            caminho_ultima_validacao(),
+            pasta_dados().join("ultima-validacao-ms"),
+        );
     }
 }

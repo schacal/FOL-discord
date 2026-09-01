@@ -117,11 +117,12 @@ na porta 9252.** As únicas portas locais do serviço são a SOCKS `9250` e a PA
 | --- | --- |
 | Estado | consulta o processo instalado, o PAC, a tarefa de bandeja, o marcador de proxies e o log local |
 | Atividade | mostra apenas as linhas `exterior` e `direto` do `fol.log`; mensagens de diagnóstico não aparecem como conexão |
+| Última checagem | lê `ultima-validacao-ms`, carimbado pelo serviço a cada passada de manutenção da piscina e também pelo botão Verificar agora; um travessão quer dizer que nenhuma checagem terminou ainda |
 | Pausar / Retomar | remove ou restaura `AutoConfigURL` no registro do usuário |
 | Verificar agora | garante uma única inicialização do serviço quando ele está parado e atualiza o estado mostrado |
 | Reiniciar Discord | usa o lançador do Discord diretamente; não reinstala nem aguarda a validação da piscina |
 | Iniciar com o PC | cria ou remove `FolDiscord.Bandeja` e migra somente a entrada `Run` que aponta exatamente para o FOL |
-| Desinstalar | abre o desinstalador NSIS, que chama a limpeza do núcleo antes de remover a interface |
+| Desinstalar | abre o desinstalador NSIS registrado em `...\Uninstall\FOL-discord` (ou o `uninstall.exe` ao lado da interface), que remove a tarefa `FolDiscord.Bandeja` e chama a limpeza do núcleo antes de apagar a interface |
 
 Fechar a janela a esconde na bandeja; o serviço continua. Os processos auxiliares
 (`tasklist`, `taskkill`, o serviço e o lançador do Discord) usam criação sem

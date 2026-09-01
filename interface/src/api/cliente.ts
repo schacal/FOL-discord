@@ -72,6 +72,13 @@ const frase = (v: unknown) => (typeof v === "string" && v ? v : null);
 const numero = (v: unknown) =>
   typeof v === "number" && Number.isFinite(v) ? v : 0;
 
+/** Um instante serve tanto em texto ISO quanto em milissegundos de época. */
+const instante = (v: unknown): string | number | null => {
+  if (typeof v === "string" && v) return v;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  return null;
+};
+
 function proxy(v: unknown): ProxyEmUso | null {
   const c = campos(v);
   // O portão é a região, que é o que a coluna "Em uso" desenha. Barrar por
@@ -98,7 +105,10 @@ function status(v: unknown): Status {
     pac_ligado: c.pac_ligado === true,
     proxies_saudaveis: numero(c.proxies_saudaveis),
     proxy_em_uso: proxy(c.proxy_em_uso),
-    ultima_validacao_utc: frase(c.ultima_validacao_utc),
+    // A ponte nativa devolve milissegundos de época; o contrato HTTP prometia
+    // texto ISO. Os dois valem — recusar o número apagaria a coluna "Última
+    // checagem" só por causa do formato.
+    ultima_validacao_utc: instante(c.ultima_validacao_utc),
     // A pastilha mostra a versão; a `url` é lembrete do contrato, porque quem
     // baixa é o `POST /atualizar`. Faltar a `url` não apaga o aviso.
     atualizacao: texto(campos(c.atualizacao).versao)
@@ -113,9 +123,10 @@ function status(v: unknown): Status {
 
 function conexao(v: unknown): Conexao | null {
   const c = campos(v);
-  if (!texto(c.host) || !texto(c.hora_utc)) return null;
+  const hora = instante(c.hora_utc);
+  if (!texto(c.host) || hora === null) return null;
   return {
-    hora_utc: texto(c.hora_utc),
+    hora_utc: hora,
     host: texto(c.host),
     porta: numero(c.porta),
     rota: c.rota === "exterior" ? "exterior" : "direto",
