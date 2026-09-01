@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img alt="versão" src="https://img.shields.io/github/v/release/schacal/FOL-discord?style=flat-square&label=vers%C3%A3o">
+  <img alt="versão" src="https://img.shields.io/github/v/release/schacal/FOL-discord?style=flat-square&label=vers%C3%A3o&cacheSeconds=1800">
   <img alt="build" src="https://img.shields.io/github/actions/workflow/status/schacal/FOL-discord/release.yml?style=flat-square&label=build">
   <img alt="licença" src="https://img.shields.io/badge/licen%C3%A7a-MIT-green?style=flat-square">
 </p>
