@@ -102,17 +102,53 @@ Comportamento esperado dele ao ver a sessão vindo de outro país — o mesmo de
 
 ## O antivírus reclamou do executável
 
-Binários Rust novos e sem assinatura de código costumam ser sinalizados por heurística, e um programa que abre um proxy local reforça isso. Você pode:
+Acontece, e não é surpresa. O instalador ainda **não tem assinatura de código**, e
+o que o programa faz — trocar o proxy do Windows, subir com o PC, buscar listas
+de proxies na internet — descreve, palavra por palavra, um sequestrador de
+tráfego. A diferença é que aqui o código está inteiro à vista.
 
-- compilar você mesmo com `cargo build --release` e comparar;
-- conferir que o binário do *Release* saiu do GitHub Actions, cujo log de execução é público;
-- ler o código — são cerca de 1.200 linhas no serviço.
+No [relatório do VirusTotal](https://www.virustotal.com/gui/file/e05c1518783a301a446b992af6430fbe3451c4f407a65aa58fb857f555a7300c)
+do instalador da v0.2.5, 4 dos 71 motores acusam:
+
+| Motor | Veredito | O que é |
+| --- | --- | --- |
+| Microsoft | `Trojan:Win32/Wacatac.B!ml` | modelo de aprendizado de máquina; o sufixo `!ml` diz isso |
+| Arctic Wolf | `Unsafe` | reputação, não análise do arquivo |
+| SecureAge | `Malicious` | aprendizado de máquina |
+| Bkav Pro | `W32.Malware.…` | hash genérico |
+
+Nenhum é assinatura de família real. Kaspersky, ESET, BitDefender, Sophos,
+Symantec, Avast, Malwarebytes, TrendMicro, Fortinet, McAfee, CrowdStrike,
+SentinelOne e Elastic passam limpo.
+
+### O que você pode fazer
+
+1. **Conferir o arquivo** pelo SHA-256 e pelo atestado de procedência — está em
+   [Segurança](seguranca.md#conferindo-o-instalador-que-você-baixou).
+2. **Compilar você mesmo** com `cargo build --release` e comparar.
+3. **Ler o código** — são cerca de 1.500 linhas em sete arquivos no serviço.
+4. **Reportar o falso positivo.** É o único caminho que tira a detecção do banco
+   do fabricante, e vale para todo mundo que baixar depois.
+
+### Onde reportar falso positivo
+
+| Fabricante | Canal |
+| --- | --- |
+| Microsoft Defender | <https://www.microsoft.com/en-us/wdsi/filesubmission> — escolha *Software developer*, marque **Incorrectly detected as malware** |
+| Arctic Wolf | <https://arcticwolf.com/contact/> |
+| SecureAge | <https://www.secureage.com/support> |
+| Bkav | <https://www.bkav.com/report-false-positive> |
+
+Ao reportar, informe o link deste repositório e o do relatório do VirusTotal: os
+dois juntos costumam bastar, porque mostram origem e código-fonte.
 
 ## A janela não abre
 
-Abra o `fol-discord-janela.exe` distribuído com o projeto ou a release. Ele já
-leva o serviço dentro; não precisa abrir PowerShell antes. Se não subir, estas
-são as causas mais prováveis, nessa ordem.
+Abra o `fol-discord-janela.exe` instalado pelo setup. O instalador deixa o
+serviço (`fol-discord.exe`) ao lado dela, e é de lá que a janela o instala — não
+precisa abrir PowerShell antes. Copiar só a janela para outra pasta não funciona:
+sem o serviço vizinho ela avisa e pede para reinstalar. Se não subir, estas são
+as causas mais prováveis, nessa ordem.
 
 **Falta o WebView2.** A janela usa o WebView2, que já vem no Windows 11 e na maioria dos Windows 10 atuais. Se ele faltar, instale o *Evergreen Bootstrapper* da Microsoft — a instalação por usuário não pede administrador.
 

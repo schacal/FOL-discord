@@ -38,10 +38,9 @@
 Depois disso ele se vira sozinho: a cada reinício do PC, a cada abertura do
 Discord, e nas reconexões durante o uso.
 
-> **Aviso do SmartScreen na primeira vez?** Uma versão assinada ainda pode ser
-> tratada como pouco conhecida enquanto a reputação se acumula. Se aparecer
-> **Editor desconhecido**, é uma versão antiga sem assinatura; confirme que o
-> arquivo veio deste repositório antes de escolher **Executar assim mesmo**.
+> **O Windows vai avisar, e o antivírus pode reclamar.** É esperado e está
+> explicado em [Antivírus e SmartScreen](#antivírus-e-smartscreen), com o
+> relatório do VirusTotal e como conferir o arquivo antes de abrir.
 
 **Não precisa** de administrador, VPN, conta, Python ou .NET.
 
@@ -75,6 +74,13 @@ mesmo, sozinho, sem VPN, e só nas conexões que decidem a região:
 | `latency.discord.media` | Todo o resto da internet |
 
 São 14 conexões e alguns kilobytes na abertura.
+
+**De onde vem o IP estrangeiro:** de proxies SOCKS5 públicos, de listas abertas,
+operados por gente que ninguém conhece. O programa testa cada candidato e só usa
+quem funciona. O tráfego é HTTPS em túnel — quem opera o proxy vê *que* você
+falou com o Discord, nunca *o quê*. Vale ler [a página de
+segurança](docs/seguranca.md) antes de instalar: ela é honesta sobre o que fica
+exposto.
 
 **O ping não muda.** Voz e tela viajam em UDP e nunca passam pelo proxy — o
 proxy do Windows só afeta TCP. O servidor de voz continua sendo o brasileiro.
@@ -143,6 +149,45 @@ instalado, nenhum arquivo do Discord é modificado, nada roda como administrador
 
 A [página de segurança](docs/seguranca.md) explica o que **fica** exposto,
 porque não é zero.
+
+## Antivírus e SmartScreen
+
+O instalador **não tem assinatura de código** — o projeto ainda não tem
+certificado. Por isso duas coisas acontecem e as duas são esperadas:
+
+**O SmartScreen mostra "Editor desconhecido".** Clique em *Mais informações* →
+*Executar assim mesmo*, depois de conferir o arquivo (abaixo).
+
+**Alguns antivírus marcam por heurística.** No
+[relatório do VirusTotal](https://www.virustotal.com/gui/file/e05c1518783a301a446b992af6430fbe3451c4f407a65aa58fb857f555a7300c),
+4 dos 71 motores acusam — todos com veredito genérico de aprendizado de máquina
+(`Wacatac.B!ml`, `Unsafe`, `Malicious`), nenhum com assinatura de família real.
+Kaspersky, ESET, BitDefender, Sophos, Symantec, Avast, Malwarebytes, TrendMicro,
+Fortinet, McAfee e CrowdStrike passam limpo.
+
+O motivo é o que o programa faz: mexe no proxy do Windows, sobe com o PC e busca
+listas de proxies na internet. É a mesma descrição de um sequestrador de tráfego
+— a diferença é que aqui o código está inteiro à vista.
+
+### Conferindo o arquivo antes de abrir
+
+```powershell
+Get-FileHash "$env:USERPROFILE\Downloads\FOL-discord-setup.exe" -Algorithm SHA256
+```
+
+Compare com o `SHA256SUMS.txt` publicado na
+[página da release](https://github.com/schacal/FOL-discord/releases/latest).
+
+Quem tem o [GitHub CLI](https://cli.github.com) pode ir além e provar que o
+arquivo saiu deste repositório, e não da máquina de alguém:
+
+```powershell
+gh attestation verify "$env:USERPROFILE\Downloads\FOL-discord-setup.exe" --repo schacal/FOL-discord
+```
+
+Se o seu antivírus bloquear, [reporte como falso
+positivo](docs/problemas.md#o-antivírus-reclamou-do-executável) — é o único jeito
+de tirar a detecção do banco do fabricante, e ajuda todo mundo que baixa depois.
 
 ## Documentação
 

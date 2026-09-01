@@ -74,8 +74,11 @@ local do próprio aplicativo. Não há API HTTP de controle em `127.0.0.1:9252`.
 
 A janela distribuída é um WebView2 com **política de conteúdo restrita**. Ela
 não se conecta a uma API HTTP local: usa apenas IPC do Tauri para pedir ações
-ao processo nativo. Fonte, scripts, imagens e a cópia do serviço já vêm no
-executável.
+ao processo nativo. Fonte, scripts e imagens já vêm no executável; o serviço
+**não** — ele é instalado ao lado da janela pelo próprio setup, e é de lá que ela
+o copia. Carregar um executável inteiro como dado dentro de outro e gravá-lo em
+disco na execução é o desenho que os antivírus leem como conta-gotas, e era
+desnecessário: o instalador já entrega o arquivo.
 
 Duas consequências que valem dizer em voz alta:
 
@@ -106,7 +109,7 @@ As dependências de terceiros dela são poucas e todas MIT, e o `.exe` publicado
 
 ## Verificando por conta própria
 
-O código é curto o bastante para ser lido inteiro — cerca de 1.200 linhas em sete arquivos no serviço. Os pontos que valem conferir:
+O código é curto o bastante para ser lido inteiro — cerca de 1.500 linhas em oito arquivos no serviço. Os pontos que valem conferir:
 
 | O que verificar | Onde |
 | --- | --- |
@@ -126,6 +129,46 @@ Get-Content "$env:LOCALAPPDATA\FolDiscord\fol.log" -Tail 30 -Encoding utf8
 Cada linha diz `exterior` ou `direto` e o destino.
 
 Os binários publicados em *Releases* são compilados pelo GitHub Actions a partir deste repositório, em execução pública e auditável — não são enviados da máquina de ninguém.
+
+## Conferindo o instalador que você baixou
+
+O instalador **ainda não tem assinatura de código** — o projeto não tem
+certificado. Enquanto não tiver, sobram duas provas, e as duas são verificáveis
+por você, sem confiar na nossa palavra.
+
+**A soma SHA-256.** Cada release publica um `SHA256SUMS.txt` ao lado do
+instalador:
+
+```powershell
+Get-FileHash "$env:USERPROFILE\Downloads\FOL-discord-setup.exe" -Algorithm SHA256
+```
+
+**O atestado de procedência.** Mais forte que a soma: ele é assinado pela
+infraestrutura do próprio GitHub e amarra o arquivo ao commit e à execução do
+workflow que o produziu. Prova que o binário saiu deste repositório, e não da
+máquina de alguém.
+
+```powershell
+gh attestation verify "$env:USERPROFILE\Downloads\FOL-discord-setup.exe" --repo schacal/FOL-discord
+```
+
+Quando existir certificado, esta conferência entra também:
+
+```powershell
+Get-AuthenticodeSignature "$env:USERPROFILE\Downloads\FOL-discord-setup.exe" | Format-List Status, SignerCertificate
+```
+
+O `install.ps1` já faz as duas primeiras sozinho: compara a soma do que baixou
+com a publicada na release e recusa executar o arquivo se divergir.
+
+## Se o antivírus acusar
+
+Acontece, e é esperado num programa sem assinatura que troca o proxy do Windows.
+O que cada motor diz, por que diz, e onde reportar como falso positivo está em
+[Problemas](problemas.md#o-antivírus-reclamou-do-executável).
+
+Reportar é o que resolve: detecção genérica de aprendizado de máquina só sai do
+banco do fabricante quando alguém submete a amostra pelo canal de falso positivo.
 
 ## Encontrou um problema de segurança?
 
