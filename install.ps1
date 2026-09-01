@@ -45,7 +45,10 @@ Start-Sleep -Seconds 2
 Move-Item -Path $tmp -Destination $exe -Force
 
 Write-Host "[3/3] Ligando a correcao e reiniciando o Discord..."
-& $exe instalar
+# Start-Process -Wait, e nao o operador de chamada: o PowerShell nao espera
+# executaveis compilados sem console, e a saida do instalador acabava saindo
+# depois do prompt voltar, fora de ordem.
+Start-Process -FilePath $exe -ArgumentList "instalar" -Wait -NoNewWindow
 
 # Deixa o comando disponivel ja nesta janela; em terminais novos o PATH do
 # usuario, que o instalador atualizou, resolve sozinho.

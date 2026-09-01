@@ -149,8 +149,13 @@ POST /revalidar   -> 204   força um reabastecimento imediato da piscina
 
 ## Problema conhecido, e é uma boa primeira tarefa
 
-`fol-discord status` **com a saída redirecionada** (`> arquivo.txt` ou por pipe) sai vazio. Numa janela interativa parece funcionar; redirecionado, não.
+O binário é compilado com `#![windows_subsystem = "windows"]` para não piscar console no autostart. O efeito colateral é que **o PowerShell não espera** por ele: `& fol-discord.exe instalar` retorna na hora, e a saída do comando aparece depois do prompt já ter voltado, fora de ordem.
 
-A causa está em `anexar_console()` no `main.rs`. O binário é compilado com `#![windows_subsystem = "windows"]` para não piscar console no autostart, e por isso precisa adotar o console de quem o chamou e reabrir as saídas padrão em `CONOUT$`. A lógica que decide entre "usar a saída herdada" e "adotar o console" não está acertando os dois casos.
+O `install.ps1` contorna isso com `Start-Process -Wait`, mas o problema continua valendo para quem digita os comandos direto no terminal.
 
-Vale resolver de uma vez, porque a interface vai depender de invocar o binário. **A saída mais limpa provavelmente é separar em dois executáveis**: `fol-discord.exe` como aplicativo de console de verdade, para a linha de comando, e `fol-discord-service.exe` sem console, para o autostart. Isso elimina a classe inteira de problema em vez de continuar remendando.
+**A saída limpa é separar em dois executáveis**, e vale fazer isso antes da interface, que também vai precisar invocar o binário e ler a resposta:
+
+- `fol-discord.exe` — subsistema de console de verdade, só a linha de comando. Some `anexar_console()` e toda a dança com `CONOUT$`.
+- `fol-discord-service.exe` — sem console, só o serviço, lançado pelo autostart e pelo instalador.
+
+Os dois saem do mesmo crate, com duas entradas `[[bin]]` sobre um `lib.rs` comum. Isso elimina a classe inteira de problema em vez de continuar remendando.
