@@ -11,6 +11,7 @@ const janela = new URL(
 );
 const ponteNativa = new URL("../src-tauri/src/servico.rs", import.meta.url);
 const inicializacao = new URL("../src-tauri/src/inicializacao.rs", import.meta.url);
+const cicloDeVida = new URL("../src-tauri/src/main.rs", import.meta.url);
 const nucleo = new URL("../../src/main.rs", import.meta.url);
 const controleDiscord = new URL("../../src/discord.rs", import.meta.url);
 const tela = new URL("../src/App.tsx", import.meta.url);
@@ -127,4 +128,33 @@ test("a tarefa da bandeja usa somente o contrato seguro de logon", async () => {
   assert.match(fonte, /--bandeja/);
   assert.match(fonte, /\.fol-discord-instalada/);
   assert.doesNotMatch(fonte, /\/RL\s+HIGHEST/i);
+});
+
+test("o boot cria a bandeja sem mostrar a janela nem recriar o Run legado", async () => {
+  const [main, ponte] = await Promise.all([
+    readFile(cicloDeVida, "utf8"),
+    readFile(ponteNativa, "utf8"),
+  ]);
+
+  assert.match(
+    main,
+    /let boot = std::env::args\(\)\.any\(\|arg\| arg == SEM_JANELA\)/,
+    "--bandeja precisa ser decidido uma única vez antes do ciclo da janela",
+  );
+  assert.match(
+    main,
+    /if !boot \{[\s\S]*janela\.show\(\)/,
+    "--bandeja não pode mostrar a janela",
+  );
+  assert.match(main, /icone\("inicializando"\)/, "a bandeja deve comunicar preparação");
+  assert.match(
+    ponte,
+    /arg\("--sem-autostart"\)/,
+    "a interface não pode recriar Run legado",
+  );
+  assert.match(
+    ponte,
+    /comando_desinstalador\(\)/,
+    "a interface instalada deve usar o desinstalador NSIS",
+  );
 });
