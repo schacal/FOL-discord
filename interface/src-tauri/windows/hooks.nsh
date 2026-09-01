@@ -5,19 +5,12 @@
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-  ; Cada nsExec deixa o código de saída na pilha. Sem o Pop correspondente, o
-  ; StrCmp lá embaixo leria o resultado do comando errado.
-  nsExec::ExecToLog '"$SYSDIR\taskkill.exe" /F /IM fol-discord-janela.exe'
-  Pop $0
-  Sleep 800
+  ; O macro padrão verifica a janela antes da limpeza. Se a pessoa cancelar,
+  ; o backup do PAC e o autostart ainda não foram tocados.
+  !insertmacro CheckIfAppIsRunning "fol-discord-janela.exe" "FOL-discord"
 
-  ; A tarefa de logon é criada pela janela, não pelo setup, então o
-  ; desinstalador do NSIS não a conhece. Deixá-la para trás faria o Windows
-  ; tentar abrir um executável apagado a cada login. schtasks devolve erro
-  ; quando a tarefa não existe — e isso aqui não é motivo para abortar nada.
-  nsExec::ExecToLog '"$SYSDIR\schtasks.exe" /delete /tn "FolDiscord.Bandeja" /f'
-  Pop $0
-
+  ; O serviço é o único dono da limpeza: restaura o PAC, valida e remove o
+  ; autostart e fecha o Discord sem duplicar comandos externos no setup.
   nsExec::ExecToLog '"$INSTDIR\fol-discord.exe" desinstalar --manter-arquivos'
   Pop $0
   StrCmp $0 "0" cleanup_ok cleanup_failed

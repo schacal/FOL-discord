@@ -208,18 +208,52 @@ test("o botão Desinstalar procura a chave que o setup NSIS realmente grava", as
 });
 
 test("desinstalar pelo setup remove a tarefa de logon que a janela criou", async () => {
-  // A tarefa é criada pela janela, então o desinstalador do NSIS não a conhece
-  // sozinho. Deixá-la para trás faz o Windows tentar abrir um .exe apagado a
-  // cada login.
+  // A tarefa é criada pela janela, então a limpeza continua pertencendo ao
+  // serviço, que já conhece o backup do PAC e valida o autostart do FOL antes
+  // de remover qualquer coisa.
   const hooks = await readFile(hooksNsis, "utf8");
 
-  assert.match(hooks, /schtasks\.exe" \/delete \/tn "FolDiscord\.Bandeja" \/f/);
+  assert.match(
+    hooks,
+    /!insertmacro CheckIfAppIsRunning "fol-discord-janela\.exe" "FOL-discord"/,
+    "o hook deve bloquear a limpeza se a janela ainda estiver aberta",
+  );
+  assert.doesNotMatch(
+    hooks,
+    /schtasks\.exe/i,
+    "a remoção da tarefa deve ter um único dono no serviço",
+  );
   const execs = hooks.match(/nsExec::ExecToLog/g) ?? [];
   const pops = hooks.match(/^\s*Pop \$0$/gm) ?? [];
   assert.equal(
     execs.length,
     pops.length,
     "cada nsExec deixa um código na pilha; sem o Pop, o StrCmp lê o comando errado",
+  );
+});
+
+test("o hook NSIS delega a limpeza ao serviço sem matar processos por utilitário", async () => {
+  const hooks = await readFile(hooksNsis, "utf8");
+
+  assert.match(
+    hooks,
+    /fol-discord\.exe" desinstalar --manter-arquivos/,
+    "a limpeza deve continuar sendo feita pelo serviço que conhece o backup do usuário",
+  );
+  assert.doesNotMatch(
+    hooks,
+    /taskkill\.exe/i,
+    "o setup não deve carregar um encerramento forçado via taskkill",
+  );
+  assert.doesNotMatch(
+    hooks,
+    /schtasks\.exe/i,
+    "a remoção da tarefa deve ter um único dono no serviço",
+  );
+  assert.equal(
+    (hooks.match(/nsExec::ExecToLog/g) ?? []).length,
+    1,
+    "o hook deve executar somente a limpeza do serviço",
   );
 });
 
