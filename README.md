@@ -8,16 +8,20 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/schacal/FOL-discord/releases/latest">
-    <img alt="Baixar para Windows" src="https://img.shields.io/badge/Baixar%20para%20Windows-instalador%20.exe-2ea44f?style=for-the-badge&logo=windows&logoColor=white">
+  <a href="https://github.com/schacal/FOL-discord/releases/latest/download/FOL-discord-setup.exe">
+    <img alt="Baixar o instalador para Windows" src="https://img.shields.io/badge/Baixar%20para%20Windows-instalador%20.exe-2ea44f?style=for-the-badge&logo=windows&logoColor=white">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/schacal/FOL-discord/releases/latest"><img alt="versão" src="https://img.shields.io/github/v/release/schacal/FOL-discord?style=flat-square&label=vers%C3%A3o"></a>
+  <sub>O download começa na hora, sempre na versão mais recente. Windows 10 e 11, 64 bits.</sub>
+</p>
+
+<p align="center">
+  <a href="#versões"><img alt="versão" src="https://img.shields.io/github/v/release/schacal/FOL-discord?style=flat-square&label=vers%C3%A3o"></a>
   <a href="https://github.com/schacal/FOL-discord/actions"><img alt="build" src="https://img.shields.io/github/actions/workflow/status/schacal/FOL-discord/release.yml?style=flat-square&label=build"></a>
   <img alt="plataforma" src="https://img.shields.io/badge/Windows-10%20e%2011-0078d4?style=flat-square">
-  <img alt="tamanho" src="https://img.shields.io/badge/tamanho-5.5%20MB-blue?style=flat-square">
+  <img alt="tamanho" src="https://img.shields.io/badge/instalador-2.6%20MB-blue?style=flat-square">
   <img alt="licença" src="https://img.shields.io/badge/licen%C3%A7a-MIT-green?style=flat-square">
 </p>
 
@@ -25,6 +29,7 @@
   <a href="#instalar">Instalar</a> ·
   <a href="#a-janela">A janela</a> ·
   <a href="#comandos">Comandos</a> ·
+  <a href="#versões">Versões</a> ·
   <a href="docs/como-funciona.md">Como funciona</a> ·
   <a href="docs/seguranca.md">Segurança</a> ·
   <a href="docs/problemas.md">Problemas</a>
@@ -45,9 +50,13 @@
 
 ### Jeito fácil — instalador do Windows
 
-1. [**Baixe o instalador**](https://github.com/schacal/FOL-discord/releases/latest) na página de releases — o arquivo `FOL-discord_x.y.z_x64-setup.exe`.
+1. [**Baixe o `FOL-discord-setup.exe`**](https://github.com/schacal/FOL-discord/releases/latest/download/FOL-discord-setup.exe) — o download começa direto, sem passar por página nenhuma.
 2. Abra o arquivo e siga o instalador.
 3. Pronto. A janela abre sozinha e a correção já está ligada.
+
+O Windows pode mostrar um aviso do SmartScreen na primeira vez, porque o
+instalador não tem assinatura paga. Clique em **Mais informações** e depois em
+**Executar assim mesmo**.
 
 Não pede administrador: instala a interface e o serviço no seu perfil, abre a
 janela normal uma vez e registra a desinstalação no Windows. Ele usa o runtime
@@ -160,6 +169,25 @@ fol-discord instalar --tudo-discord    # manda todo domínio do Discord pelo ext
 ```
 
 A segunda é rede de segurança, para o caso de a correção padrão não bastar na sua máquina.
+
+## Versões
+
+A janela avisa sozinha quando sai uma versão nova — ela consulta a release
+pública do GitHub ao abrir e, depois, no máximo uma vez a cada seis horas. Ela
+nunca baixa nem instala nada por conta própria: o aviso só abre o download.
+
+Todas as versões, com as notas de cada uma, ficam na
+[**página de releases**](https://github.com/schacal/FOL-discord/releases). Cada
+release traz três arquivos:
+
+| Arquivo | Para quem |
+| --- | --- |
+| `FOL-discord-setup.exe` | **A maioria das pessoas.** É o instalador, sempre com este nome, em toda versão — é para ele que o botão do topo aponta |
+| `FOL-discord_x.y.z_x64-setup.exe` | O mesmo instalador, com a versão carimbada no nome, para guardar uma versão específica |
+| `fol-discord.exe` | Só o serviço de linha de comando, sem janela — é o que o `install.ps1` baixa |
+
+Para voltar a uma versão anterior, baixe o instalador dela na página de releases
+e abra: ele instala por cima da que já está no computador.
 
 ## Documentação
 

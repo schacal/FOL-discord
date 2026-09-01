@@ -50,11 +50,25 @@ jobs:
           name: fol-discord-cli
           path: target/release/fol-discord.exe
 
+      # O botão de baixar do README aponta para um nome fixo em
+      # releases/latest/download. O NSIS carimba a versão no nome do arquivo,
+      # então publicamos também uma cópia com nome estável — sem ela, o botão
+      # quebraria a cada versão nova.
+      - name: Cópia do instalador com nome estável
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem interface/src-tauri/target/release/bundle/nsis/*-setup.exe |
+            Select-Object -First 1
+          if (-not $setup) { throw "o build nao gerou o instalador NSIS" }
+          Copy-Item $setup.FullName FOL-discord-setup.exe
+
       - name: Publicar release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            FOL-discord-setup.exe
             interface/src-tauri/target/release/bundle/nsis/*-setup.exe
             target/release/fol-discord.exe
           generate_release_notes: true
