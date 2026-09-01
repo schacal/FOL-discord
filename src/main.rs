@@ -118,8 +118,12 @@ fn instalar(reiniciar_discord: bool) -> Result<()> {
     // O marcador é de quem está subindo agora, não da instalação anterior.
     let _ = std::fs::remove_file(caminho_marcador());
 
+    // Sem isto o serviço herda o console de quem instalou e passa a escrever
+    // suas linhas de log por cima da saída dos comandos do usuário.
     std::process::Command::new(&destino)
         .arg("rodar")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .spawn()
         .context("subindo o serviço")?;
 

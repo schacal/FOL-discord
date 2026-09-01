@@ -42,6 +42,8 @@ pub fn reiniciar() -> Result<bool> {
     }
     std::process::Command::new(lancador)
         .args(["--processStart", "Discord.exe"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .spawn()?;
     Ok(true)
 }
