@@ -178,12 +178,11 @@ nunca baixa nem instala nada por conta própria: o aviso só abre o download.
 
 Todas as versões, com as notas de cada uma, ficam na
 [**página de releases**](https://github.com/schacal/FOL-discord/releases). Cada
-release traz três arquivos:
+release traz dois arquivos, sempre com os mesmos nomes:
 
 | Arquivo | Para quem |
 | --- | --- |
-| `FOL-discord-setup.exe` | **A maioria das pessoas.** É o instalador, sempre com este nome, em toda versão — é para ele que o botão do topo aponta |
-| `FOL-discord_x.y.z_x64-setup.exe` | O mesmo instalador, com a versão carimbada no nome, para guardar uma versão específica |
+| `FOL-discord-setup.exe` | **A maioria das pessoas.** É o instalador com a janela — é para ele que o botão do topo aponta |
 | `fol-discord.exe` | Só o serviço de linha de comando, sem janela — é o que o `install.ps1` baixa |
 
 Para voltar a uma versão anterior, baixe o instalador dela na página de releases

@@ -50,11 +50,11 @@ jobs:
           name: fol-discord-cli
           path: target/release/fol-discord.exe
 
-      # O botão de baixar do README aponta para um nome fixo em
-      # releases/latest/download. O NSIS carimba a versão no nome do arquivo,
-      # então publicamos também uma cópia com nome estável — sem ela, o botão
-      # quebraria a cada versão nova.
-      - name: Cópia do instalador com nome estável
+      # O NSIS carimba a versão no nome do arquivo, mas o botão de baixar do
+      # README aponta para um nome fixo em releases/latest/download. Renomeamos
+      # o instalador em vez de publicar as duas cópias: a versão já está na
+      # própria release, e dois .exe idênticos só confundem quem vai baixar.
+      - name: Instalador com nome estável
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
@@ -69,6 +69,5 @@ jobs:
         with:
           files: |
             FOL-discord-setup.exe
-            interface/src-tauri/target/release/bundle/nsis/*-setup.exe
             target/release/fol-discord.exe
           generate_release_notes: true
