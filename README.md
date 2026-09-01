@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  Corrige o bug do Discord que derruba a <b>transmissão de tela</b> em provedores brasileiros.<br>
-  Sem VPN, sem conta, sem mensalidade, sem administrador. Instala e esquece.
+  Devolve a <b>transmissão de tela</b> e a <b>câmera</b> do Discord no Brasil.<br>
+  Sem VPN, sem conta, sem mensalidade, sem administrador, sem perder ping. Instala e esquece.
 </p>
 
 <p align="center">
@@ -40,15 +40,23 @@ A partir daí funciona sozinho — em todo reinício do PC, em toda abertura do 
 
 Devolve o proxy automático do Windows ao valor anterior e apaga a pasta. Sem rastro.
 
+## Contexto
+
+O Discord vem enfrentando pendências jurídicas no Brasil. Não é assunto deste repositório e não vamos entrar no mérito.
+
+O que interessa aqui é o efeito prático que muita gente passou a sentir: **a transmissão de tela e a câmera pararam de funcionar.**
+
+Este programa contorna esse efeito de forma rápida, sem perda de ping e sem abrir mão da sua segurança. O mecanismo é o mesmo que já se fazia na mão — abrir o Discord com uma VPN ligada e desligar depois — só que automático, permanente e sem VPN nenhuma.
+
 ## O que ele resolve
 
-O Discord decide a região da sua sessão pelo IP que enxerga **no momento em que abre**. Em provedores brasileiros com peering ruim, essa decisão sai errada — e o sintoma mais visível é a transmissão de tela parar de funcionar.
+O Discord decide a região da sua sessão pelo IP que enxerga **no momento em que abre**. Essa decisão fica valendo para a sessão inteira, e quando ela sai errada a transmissão de tela e a câmera param.
 
 A gambiarra conhecida era abrir o Discord com VPN ligada e desligar depois. Isto faz o mesmo, sozinho, sem VPN, e só com as conexões que realmente decidem a região.
 
 | Sai por um IP estrangeiro | Sai direto, como sempre |
 | --- | --- |
-| `discord.com` | **Áudio, vídeo e transmissão de tela** |
+| `discord.com` | **Áudio, câmera e transmissão de tela** |
 | `gateway.discord.gg` | `cdn.discordapp.com` e imagens |
 | `latency.discord.media` | Todo o resto da internet |
 
@@ -111,9 +119,11 @@ cargo test
 
 ## Por que FOL?
 
-Porque é exatamente o que ele faz: **F**az **O** **L**ink sair do país e voltar. Sai, dá a volta, volta — e aí o Discord funciona.
+Oficialmente: **F**az **O** **L**ink sair do país e voltar. Sai, dá a volta, volta — e aí o Discord funciona.
 
-Qualquer outra leitura da sigla é problema seu.
+Extraoficialmente: sim, é **Faz o L**.
+
+As duas leituras estão corretas e nenhuma das duas foi acidente.
 
 ## Licença
 
