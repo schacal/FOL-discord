@@ -6,3 +6,7 @@
 
 # planejamento interno das sessoes, nao entra no repositorio
 /docs/superpowers/
+
+# saidas de compilacao e configuracao local de editor
+/dist/
+/.claude/
