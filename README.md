@@ -1,4 +1,8 @@
-<h1 align="center">desbuga-discord</h1>
+<h1 align="center">FOL-discord</h1>
+
+<p align="center">
+  <i><b>F</b>az <b>O</b> <b>L</b>ink sair do país — e voltar.</i>
+</p>
 
 <p align="center">
   Corrige o bug do Discord que derruba a <b>transmissão de tela</b> em provedores brasileiros.<br>
@@ -6,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/schacal/desbuga-discord/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/schacal/desbuga-discord?style=flat-square"></a>
-  <a href="https://github.com/schacal/desbuga-discord/actions"><img alt="build" src="https://img.shields.io/github/actions/workflow/status/schacal/desbuga-discord/release.yml?style=flat-square"></a>
+  <a href="https://github.com/schacal/FOL-discord/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/schacal/FOL-discord?style=flat-square"></a>
+  <a href="https://github.com/schacal/FOL-discord/actions"><img alt="build" src="https://img.shields.io/github/actions/workflow/status/schacal/FOL-discord/release.yml?style=flat-square"></a>
   <img alt="tamanho" src="https://img.shields.io/badge/tamanho-1.8%20MB-blue?style=flat-square">
   <img alt="licença" src="https://img.shields.io/badge/licen%C3%A7a-MIT-green?style=flat-square">
 </p>
@@ -19,7 +23,7 @@
 Abra o **PowerShell** e cole:
 
 ```powershell
-irm https://raw.githubusercontent.com/schacal/desbuga-discord/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/schacal/FOL-discord/main/install.ps1 | iex
 ```
 
 Feche e abra o Discord uma vez. Pronto.
@@ -31,7 +35,7 @@ A partir daí funciona sozinho — em todo reinício do PC, em toda abertura do 
 ## Desinstalar
 
 ```powershell
-& "$env:LOCALAPPDATA\DesbugaDiscord\desbuga-discord.exe" desinstalar
+& "$env:LOCALAPPDATA\FolDiscord\fol-discord.exe" desinstalar
 ```
 
 Devolve o proxy automático do Windows ao valor anterior e apaga a pasta. Sem rastro.
@@ -55,16 +59,16 @@ São 14 conexões e alguns kilobytes na abertura.
 ## Comandos
 
 ```powershell
-desbuga-discord instalar      # liga a correção e faz subir com o Windows
-desbuga-discord status        # mostra o estado atual
-desbuga-discord desinstalar   # remove tudo
-desbuga-discord rodar         # roda em primeiro plano, para depurar
+fol-discord instalar      # liga a correção e faz subir com o Windows
+fol-discord status        # mostra o estado atual
+fol-discord desinstalar   # remove tudo
+fol-discord rodar         # roda em primeiro plano, para depurar
 ```
 
 Se a correção padrão não bastar na sua máquina, existe uma rede de segurança que manda **todo** domínio do Discord pelo exterior:
 
 ```powershell
-desbuga-discord instalar --tudo-discord
+fol-discord instalar --tudo-discord
 ```
 
 ## Documentação
@@ -80,7 +84,7 @@ desbuga-discord instalar --tudo-discord
 ## Estrutura
 
 ```
-desbuga-discord/
+fol-discord/
 ├── src/
 │   ├── main.rs        instalação, desinstalação, status, laço principal
 │   ├── routing.rs     decide, por host, quem sai por fora
@@ -99,11 +103,17 @@ desbuga-discord/
 cargo build --release
 ```
 
-Sai em `target/release/desbuga-discord.exe`. Os binários publicados em *Releases* são compilados pelo GitHub Actions a partir deste repositório — não são enviados da máquina de ninguém.
+Sai em `target/release/fol-discord.exe`. Os binários publicados em *Releases* são compilados pelo GitHub Actions a partir deste repositório — não são enviados da máquina de ninguém.
 
 ```bash
 cargo test
 ```
+
+## Por que FOL?
+
+Porque é exatamente o que ele faz: **F**az **O** **L**ink sair do país e voltar. Sai, dá a volta, volta — e aí o Discord funciona.
+
+Qualquer outra leitura da sigla é problema seu.
 
 ## Licença
 

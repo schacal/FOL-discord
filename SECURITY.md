@@ -8,4 +8,4 @@ Abra uma issue neste repositório. Se a falha puder expor usuários, descreva-a 
 
 ## Versões suportadas
 
-Só a versão mais recente publicada em [Releases](https://github.com/schacal/desbuga-discord/releases).
+Só a versão mais recente publicada em [Releases](https://github.com/schacal/FOL-discord/releases).

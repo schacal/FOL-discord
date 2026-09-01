@@ -6,8 +6,8 @@ use winreg::{enums::*, RegKey};
 
 const CHAVE_INTERNET: &str = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
 const CHAVE_RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-const NOME_RUN: &str = "DesbugaDiscord";
-const BACKUP: &str = "AutoConfigURL_backup_DesbugaDiscord";
+const NOME_RUN: &str = "FolDiscord";
+const BACKUP: &str = "AutoConfigURL_backup_FolDiscord";
 
 fn hkcu() -> RegKey {
     RegKey::predef(HKEY_CURRENT_USER)

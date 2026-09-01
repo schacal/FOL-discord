@@ -1,19 +1,19 @@
-# desbuga-discord — instalador
+# fol-discord — instalador
 #
 # Uso:
-#   irm https://raw.githubusercontent.com/schacal/desbuga-discord/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/schacal/FOL-discord/main/install.ps1 | iex
 #
 # Baixa o executável mais recente publicado no GitHub, instala em
-# %LOCALAPPDATA%\DesbugaDiscord e liga a correção. Não precisa de administrador.
+# %LOCALAPPDATA%\FolDiscord e liga a correção. Não precisa de administrador.
 
 $ErrorActionPreference = "Stop"
 
-$repo    = "schacal/desbuga-discord"
-$destino = Join-Path $env:LOCALAPPDATA "DesbugaDiscord"
-$exe     = Join-Path $destino "desbuga-discord.exe"
+$repo    = "schacal/FOL-discord"
+$destino = Join-Path $env:LOCALAPPDATA "FolDiscord"
+$exe     = Join-Path $destino "fol-discord.exe"
 
 Write-Host ""
-Write-Host "desbuga-discord — instalando" -ForegroundColor Cyan
+Write-Host "fol-discord — instalando" -ForegroundColor Cyan
 Write-Host ""
 
 New-Item -ItemType Directory -Force -Path $destino | Out-Null
@@ -21,8 +21,8 @@ New-Item -ItemType Directory -Force -Path $destino | Out-Null
 Write-Host "[1/3] Procurando a versao mais recente..."
 try {
     $release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest" `
-        -Headers @{ "User-Agent" = "desbuga-discord-installer" }
-    $url = ($release.assets | Where-Object { $_.name -eq "desbuga-discord.exe" }).browser_download_url
+        -Headers @{ "User-Agent" = "fol-discord-installer" }
+    $url = ($release.assets | Where-Object { $_.name -eq "fol-discord.exe" }).browser_download_url
     if (-not $url) { throw "release sem o executavel" }
     Write-Host "      versao $($release.tag_name)"
 } catch {

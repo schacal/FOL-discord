@@ -1,4 +1,4 @@
-//! desbuga-discord — corrige o bug do Discord no Brasil.
+//! fol-discord — corrige o bug do Discord no Brasil.
 //!
 //! O Discord decide a região da sua sessão pelo IP que enxerga na abertura.
 //! Em vários provedores brasileiros essa decisão sai errada e a transmissão de
@@ -29,15 +29,15 @@ fn url_pac() -> String {
 
 pub fn pasta_dados() -> PathBuf {
     let base = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".into());
-    PathBuf::from(base).join("DesbugaDiscord")
+    PathBuf::from(base).join("FolDiscord")
 }
 
 pub fn caminho_log() -> PathBuf {
-    pasta_dados().join("desbuga.log")
+    pasta_dados().join("fol.log")
 }
 
 fn caminho_instalado() -> PathBuf {
-    pasta_dados().join("desbuga-discord.exe")
+    pasta_dados().join("fol-discord.exe")
 }
 
 fn main() -> Result<()> {
@@ -69,12 +69,12 @@ fn main() -> Result<()> {
 
 fn ajuda() {
     println!(
-        "\ndesbuga-discord {}\n\n\
+        "\nfol-discord {}\n\n\
          Uso:\n  \
-         desbuga-discord instalar      liga a correção e faz subir com o Windows\n  \
-         desbuga-discord desinstalar   remove tudo, sem deixar rastro\n  \
-         desbuga-discord status        mostra o estado atual\n  \
-         desbuga-discord rodar         roda em primeiro plano (para depurar)\n\n\
+         fol-discord instalar      liga a correção e faz subir com o Windows\n  \
+         fol-discord desinstalar   remove tudo, sem deixar rastro\n  \
+         fol-discord status        mostra o estado atual\n  \
+         fol-discord rodar         roda em primeiro plano (para depurar)\n\n\
          Opções:\n  \
          --tudo-discord                manda todo domínio do Discord pro exterior\n                                \
          (use só se a correção padrão não bastar)\n",
@@ -123,7 +123,7 @@ fn desinstalar() -> Result<()> {
 }
 
 fn status() -> Result<()> {
-    println!("\ndesbuga-discord {}\n", env!("CARGO_PKG_VERSION"));
+    println!("\nfol-discord {}\n", env!("CARGO_PKG_VERSION"));
     println!("  instalado  : {}", sim_nao(caminho_instalado().exists()));
     println!("  autostart  : {}", sim_nao(windows::autostart_ativo()));
     println!("  PAC ligado : {}", sim_nao(windows::pac_ativo(&url_pac())));
@@ -140,7 +140,7 @@ fn encerrar_outras_instancias() {
         .args([
             "/F",
             "/IM",
-            "desbuga-discord.exe",
+            "fol-discord.exe",
             "/FI",
             &format!("PID ne {eu}"),
         ])

@@ -29,12 +29,12 @@ jobs:
       - name: Publicar artefato
         uses: actions/upload-artifact@v4
         with:
-          name: desbuga-discord
-          path: target/release/desbuga-discord.exe
+          name: fol-discord
+          path: target/release/fol-discord.exe
 
       - name: Publicar release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/desbuga-discord.exe
+          files: target/release/fol-discord.exe
           generate_release_notes: true

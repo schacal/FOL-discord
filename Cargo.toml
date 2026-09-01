@@ -1,5 +1,5 @@
 [package]
-name = "desbuga-discord"
+name = "fol-discord"
 version = "0.1.0"
 edition = "2021"
 description = "Corrige o bug do Discord no Brasil fazendo o handshake sair por um IP estrangeiro"

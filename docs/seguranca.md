@@ -49,8 +49,8 @@ Duas marcas, ambas em `HKCU`, ambas sem administrador, ambas reversíveis:
 | O quê | Onde | Na desinstalação |
 | --- | --- | --- |
 | Proxy automático | `HKCU\...\Internet Settings\AutoConfigURL` | volta ao valor anterior, que é guardado antes de trocar |
-| Autostart | `HKCU\...\CurrentVersion\Run\DesbugaDiscord` | removido |
-| Executável e log | `%LOCALAPPDATA%\DesbugaDiscord\` | pasta apagada |
+| Autostart | `HKCU\...\CurrentVersion\Run\FolDiscord` | removido |
+| Executável e log | `%LOCALAPPDATA%\FolDiscord\` | pasta apagada |
 
 Nada é escrito em `HKLM`, em `Arquivos de Programas` ou no diretório do Discord. **Nenhum arquivo do Discord é modificado** — nem `settings.json`, nem atalhos, nem os binários. Por isso atualizações do Discord não quebram nada e não há o que restaurar.
 
@@ -81,7 +81,7 @@ O código é curto o bastante para ser lido inteiro — cerca de 700 linhas em s
 Para ver ao vivo por onde cada conexão saiu:
 
 ```powershell
-Get-Content "$env:LOCALAPPDATA\DesbugaDiscord\desbuga.log" -Tail 30
+Get-Content "$env:LOCALAPPDATA\FolDiscord\fol.log" -Tail 30
 ```
 
 Cada linha diz `exterior` ou `direto` e o destino.
