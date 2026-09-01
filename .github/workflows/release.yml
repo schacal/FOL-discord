@@ -9,6 +9,11 @@ on:
 
 permissions:
   contents: write
+  # O atestado de procedencia e assinado pelo OIDC do proprio Actions: e o que
+  # permite a quem baixa provar que o instalador saiu deste repositorio, mesmo
+  # enquanto nao existe certificado de assinatura de codigo.
+  id-token: write
+  attestations: write
 
 jobs:
   build:
@@ -34,17 +39,51 @@ jobs:
 
       # A assinatura só acontece em tags de release. Pull requests continuam
       # compilando e testando sem receber acesso às credenciais do Azure.
-      - name: Compilar núcleo para assinatura
+      #
+      # Ela também depende de uma conta de assinatura configurada. Enquanto ela
+      # não existir, a release continua saindo — sem assinatura, dizendo isso em
+      # voz alta no log e nos arquivos publicados. Falhar aqui deixaria o
+      # projeto sem nenhuma forma de publicar correção, que é pior do que
+      # publicar um binário sem assinatura e admitir que ele não tem.
+      - name: Conferir configuração de assinatura
+        id: assinatura
         if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          AZURE_ARTIFACT_SIGNING_PROFILE: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+        run: |
+          $faltando = @(
+            'AZURE_CLIENT_ID',
+            'AZURE_CLIENT_SECRET',
+            'AZURE_TENANT_ID',
+            'AZURE_ARTIFACT_SIGNING_ENDPOINT',
+            'AZURE_ARTIFACT_SIGNING_ACCOUNT',
+            'AZURE_ARTIFACT_SIGNING_PROFILE'
+          ) | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
+
+          if ($faltando) {
+            Write-Host "::warning title=Release sem assinatura::Falta configurar nos Secrets/Variables: $($faltando -join ', '). O instalador sai sem assinatura de codigo."
+            "configurada=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            "configurada=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      - name: Compilar núcleo para assinatura
+        if: steps.assinatura.outputs.configurada == 'true'
         run: cargo build --release --locked
 
       - name: Instalar ferramenta de assinatura
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.assinatura.outputs.configurada == 'true'
         run: cargo install artifact-signing-cli --version 0.11.0 --locked
 
       # O núcleo precisa estar assinado antes de o build.rs embuti-lo na janela.
       - name: Assinar o núcleo antes de embutir
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.assinatura.outputs.configurada == 'true'
         shell: pwsh
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -80,7 +119,7 @@ jobs:
       # O Tauri altera a janela ao iniciar o bundle. O signCommand é executado
       # depois desse patch e também assina o setup NSIS final.
       - name: Preparar assinatura do empacotador
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.assinatura.outputs.configurada == 'true'
         shell: pwsh
         env:
           AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
@@ -102,11 +141,11 @@ jobs:
           $configuracao | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $destino -Encoding utf8
 
       - name: Build do instalador sem assinatura
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        if: steps.assinatura.outputs.configurada != 'true'
         run: npm --prefix interface run tauri -- build --bundles nsis
 
       - name: Build do instalador assinado
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.assinatura.outputs.configurada == 'true'
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -118,7 +157,7 @@ jobs:
         run: npm --prefix interface test
 
       - name: Verificar assinaturas dos artefatos
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.assinatura.outputs.configurada == 'true'
         shell: pwsh
         run: |
           $pastaNsis = Join-Path $env:GITHUB_WORKSPACE 'interface\src-tauri\target\release\bundle\nsis'
@@ -126,8 +165,19 @@ jobs:
             Select-Object -First 1
           if (-not $setup) { throw 'o build nao gerou o instalador NSIS' }
 
+          # O sidecar e o arquivo que o NSIS instala como fol-discord.exe ao
+          # lado da janela: e ele que roda na maquina de quem baixa, nao a copia
+          # em target/release. Ele so estava assinado por acidente feliz - por
+          # ser copia byte a byte do nucleo ja assinado. Verificar aqui
+          # transforma o acidente em garantia.
+          $pastaSidecar = Join-Path $env:GITHUB_WORKSPACE 'interface\src-tauri\binaries'
+          $sidecar = Get-ChildItem -Path $pastaSidecar -Filter 'fol-discord-*.exe' -File |
+            Select-Object -First 1
+          if (-not $sidecar) { throw 'o build nao gerou o sidecar do nucleo' }
+
           $arquivos = @(
             (Join-Path $env:GITHUB_WORKSPACE 'target\release\fol-discord.exe'),
+            $sidecar.FullName,
             (Join-Path $env:GITHUB_WORKSPACE 'interface\src-tauri\target\release\fol-discord-janela.exe'),
             $setup.FullName
           )
@@ -152,13 +202,18 @@ jobs:
           name: fol-discord-cli
           path: target/release/fol-discord.exe
 
-      # A release publica um arquivo só: o instalador. Ele já traz o serviço
-      # dentro, então publicar o `fol-discord.exe` solto ao lado só daria a quem
-      # vai baixar a chance de pegar o executável que não instala nada.
+      # A release publica o instalador, e só ele: ele já traz o serviço dentro,
+      # então publicar o `fol-discord.exe` solto ao lado só daria a quem vai
+      # baixar a chance de pegar o executável que não instala nada.
       #
-      # O NSIS carimba a versão no nome do arquivo, mas o botão de baixar do
-      # README aponta para um nome fixo em releases/latest/download — daí a
-      # cópia com nome estável.
+      # São dois nomes para o mesmo arquivo, mesmo conteúdo e mesma assinatura:
+      #
+      #   - `FOL-discord-setup.exe`, o nome fixo que o botão do README e o
+      #     `install.ps1` pedem em `releases/latest/download`;
+      #   - o nome que o NSIS carimba com a versão, que é o que a janela já
+      #     instalada procura para avisar de atualização (`servico.rs`). Sem ele
+      #     publicado, quem está numa versão antiga nunca fica sabendo da nova —
+      #     foi o que aconteceu com a v0.2.5.
       - name: Instalador com nome estável
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
@@ -166,11 +221,41 @@ jobs:
           $setup = Get-ChildItem interface/src-tauri/target/release/bundle/nsis/*-setup.exe |
             Select-Object -First 1
           if (-not $setup) { throw "o build nao gerou o instalador NSIS" }
+
+          # O NSIS tira a versao do tauri.conf.json, nao da tag. Divergindo as
+          # duas, o asset sai com um nome que a janela instalada nao procura e o
+          # aviso de atualizacao volta a nunca aparecer, sem erro nenhum.
+          $versao = $env:GITHUB_REF_NAME -replace '^v', ''
+          $esperado = "FOL-discord_${versao}_x64-setup.exe"
+          if ($setup.Name -ne $esperado) {
+            throw "o instalador saiu como $($setup.Name), mas a tag $env:GITHUB_REF_NAME pede $esperado - suba a versao em Cargo.toml, interface/package.json, interface/src-tauri/Cargo.toml e interface/src-tauri/tauri.conf.json"
+          }
+
           Copy-Item $setup.FullName FOL-discord-setup.exe
+
+      # Enquanto nao existe certificado de assinatura de codigo, a soma e o
+      # atestado sao o unico jeito de quem baixa conferir que o arquivo e
+      # exatamente o que este repositorio compilou.
+      - name: Somas de verificação
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $soma = (Get-FileHash -Algorithm SHA256 -LiteralPath FOL-discord-setup.exe).Hash.ToLower()
+          "$soma  FOL-discord-setup.exe" | Out-File -FilePath SHA256SUMS.txt -Encoding ascii
+          Write-Host "SHA-256: $soma"
+
+      - name: Atestado de procedência
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: FOL-discord-setup.exe
 
       - name: Publicar release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: FOL-discord-setup.exe
+          files: |
+            FOL-discord-setup.exe
+            SHA256SUMS.txt
+            interface/src-tauri/target/release/bundle/nsis/*-setup.exe
           generate_release_notes: true
