@@ -89,10 +89,7 @@ fn instalar() -> Result<()> {
     let atual = std::env::current_exe()?;
     if atual != destino {
         // Se já havia uma cópia rodando, ela precisa sair antes de ser trocada.
-        let _ = std::process::Command::new("taskkill")
-            .args(["/F", "/IM", "desbuga-discord.exe"])
-            .output();
-        std::thread::sleep(Duration::from_millis(800));
+        encerrar_outras_instancias();
         std::fs::copy(&atual, &destino).context("copiando o executável")?;
     }
 
@@ -117,10 +114,7 @@ fn instalar() -> Result<()> {
 fn desinstalar() -> Result<()> {
     windows::desativar_pac().context("devolvendo o proxy automático")?;
     windows::desativar_autostart().context("removendo o autostart")?;
-    let _ = std::process::Command::new("taskkill")
-        .args(["/F", "/IM", "desbuga-discord.exe"])
-        .output();
-    std::thread::sleep(Duration::from_millis(800));
+    encerrar_outras_instancias();
     let _ = std::fs::remove_dir_all(pasta_dados());
 
     println!("Removido. O proxy automático do Windows voltou ao que era antes.");
@@ -136,6 +130,22 @@ fn status() -> Result<()> {
     println!("  rodando    : {}", sim_nao(porta_ocupada(PORTA_SOCKS)));
     println!("  log        : {}", caminho_log().display());
     Ok(())
+}
+
+/// Encerra cópias antigas do serviço — e só elas. O filtro por PID existe
+/// porque o instalador tem o mesmo nome de imagem e mataria a si próprio.
+fn encerrar_outras_instancias() {
+    let eu = std::process::id();
+    let _ = std::process::Command::new("taskkill")
+        .args([
+            "/F",
+            "/IM",
+            "desbuga-discord.exe",
+            "/FI",
+            &format!("PID ne {eu}"),
+        ])
+        .output();
+    std::thread::sleep(Duration::from_millis(800));
 }
 
 fn sim_nao(b: bool) -> &'static str {
@@ -200,12 +210,40 @@ fn rodar(modo: Modo) -> Result<()> {
 }
 
 /// Compilado como aplicativo de janela para não piscar console no autostart.
-/// Quando chamado de um terminal, reaproveita o console de quem chamou para
-/// que `instalar` e `status` tenham saída visível.
+/// Quando chamado de um terminal, adota o console de quem chamou — e reabre
+/// as saídas padrão apontando para ele, senão `println!` escreveria no vazio.
 fn anexar_console() {
     #[cfg(windows)]
     unsafe {
-        use windows_sys::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
-        AttachConsole(ATTACH_PARENT_PROCESS);
+        use windows_sys::Win32::{
+            Foundation::{GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE},
+            Storage::FileSystem::{
+                CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE,
+                OPEN_EXISTING,
+            },
+            System::Console::{
+                AttachConsole, SetStdHandle, ATTACH_PARENT_PROCESS, STD_ERROR_HANDLE,
+                STD_OUTPUT_HANDLE,
+            },
+        };
+
+        if AttachConsole(ATTACH_PARENT_PROCESS) == 0 {
+            return; // sem terminal chamador: rodando pelo autostart
+        }
+
+        let nome: Vec<u16> = "CONOUT$\0".encode_utf16().collect();
+        let saida = CreateFileW(
+            nome.as_ptr(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            std::ptr::null_mut(),
+        );
+        if saida != INVALID_HANDLE_VALUE {
+            SetStdHandle(STD_OUTPUT_HANDLE, saida);
+            SetStdHandle(STD_ERROR_HANDLE, saida);
+        }
     }
 }
