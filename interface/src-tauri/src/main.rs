@@ -61,12 +61,16 @@ fn dica(estado: &str) -> &'static str {
     }
 }
 
+/// Traz a janela para a frente — pela bandeja ou por uma segunda abertura — e
+/// aproveita para perguntar se saiu versão nova, porque é agora que a pessoa
+/// está olhando. A folga entre consultas fica com o serviço.
 fn mostrar(app: &AppHandle) {
     if let Some(janela) = app.get_webview_window(JANELA) {
         let _ = janela.show();
         let _ = janela.unminimize();
         let _ = janela.set_focus();
     }
+    servico::verificar_atualizacao_ao_mostrar();
 }
 
 /// Sobe (ou reinstala) a cópia estável do serviço a partir do arquivo que o

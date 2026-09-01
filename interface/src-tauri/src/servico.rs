@@ -18,7 +18,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{Mutex, OnceLock},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use winreg::{enums::*, RegKey};
 
@@ -30,9 +30,12 @@ const IMAGEM_DO_SERVICO: &str = "fol-discord.exe";
 const CHAVE_INTERNET: &str = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
 const URL_ULTIMA_RELEASE: &str = "https://api.github.com/repos/schacal/FOL-discord/releases/latest";
 const INTERVALO_ATUALIZACAO: Duration = Duration::from_secs(6 * 60 * 60);
+/// Folga mínima entre duas consultas disparadas por mostrar a janela.
+const FOLGA_AO_MOSTRAR: Duration = Duration::from_secs(10 * 60);
 
 static ERRO_INICIALIZACAO: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 static ATUALIZACAO: OnceLock<Mutex<Option<Atualizacao>>> = OnceLock::new();
+static ULTIMA_CONSULTA: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 static VERIFICADOR_DE_ATUALIZACAO: OnceLock<()> = OnceLock::new();
 
 /// Copiado pelo build.rs depois de compilar o serviço raiz deste repositório.
@@ -430,6 +433,22 @@ fn atualizacao_conhecida() -> Option<Atualizacao> {
         .and_then(|atualizacao| atualizacao.lock().ok().and_then(|valor| valor.clone()))
 }
 
+/// Consulta a release e guarda o resultado. Uma falha de rede não apaga um
+/// aviso que já estava de pé: a release não deixou de existir porque a
+/// consulta seguinte caiu.
+fn renovar_atualizacao() {
+    if let Ok(atualizacao) = consultar_atualizacao() {
+        let estado = ATUALIZACAO.get_or_init(|| Mutex::new(None));
+        if let Ok(mut valor) = estado.lock() {
+            *valor = atualizacao;
+        }
+    }
+    let ultima = ULTIMA_CONSULTA.get_or_init(|| Mutex::new(None));
+    if let Ok(mut valor) = ultima.lock() {
+        *valor = Some(Instant::now());
+    }
+}
+
 /// Uma consulta ao abrir e novas tentativas espaçadas mantêm o aviso atual sem
 /// transformar as leituras de estado de dois em dois segundos em telemetria.
 pub fn iniciar_verificacao_atualizacao() {
@@ -437,14 +456,30 @@ pub fn iniciar_verificacao_atualizacao() {
         return;
     }
     std::thread::spawn(|| loop {
-        if let Ok(atualizacao) = consultar_atualizacao() {
-            let estado = ATUALIZACAO.get_or_init(|| Mutex::new(None));
-            if let Ok(mut valor) = estado.lock() {
-                *valor = atualizacao;
-            }
-        }
+        renovar_atualizacao();
         std::thread::sleep(INTERVALO_ATUALIZACAO);
     });
+}
+
+fn consulta_vale_a_pena(ultima: Option<Instant>, agora: Instant, folga: Duration) -> bool {
+    match ultima {
+        None => true,
+        Some(ultima) => agora.saturating_duration_since(ultima) >= folga,
+    }
+}
+
+/// A janela passa horas escondida na bandeja, e seis horas é tempo demais para
+/// quem acabou de clicar nela para ver se há novidade. Cada vez que ela volta à
+/// frente, consultamos de novo — com uma folga entre consultas, para que quem
+/// abre e fecha a janela dez vezes num minuto não vire dez requisições.
+pub fn verificar_atualizacao_ao_mostrar() {
+    let ultima = ULTIMA_CONSULTA
+        .get()
+        .and_then(|valor| valor.lock().ok().and_then(|guardado| *guardado));
+    if !consulta_vale_a_pena(ultima, Instant::now(), FOLGA_AO_MOSTRAR) {
+        return;
+    }
+    std::thread::spawn(renovar_atualizacao);
 }
 
 pub fn url_da_atualizacao() -> Result<String, String> {
@@ -613,10 +648,34 @@ fn erro_inicializacao() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        atualizacao_da_release, interpretar_conexoes, ler_ultima_validacao_em,
-        registrar_ultima_validacao_em,
+        atualizacao_da_release, consulta_vale_a_pena, interpretar_conexoes,
+        ler_ultima_validacao_em, registrar_ultima_validacao_em,
     };
-    use std::fs;
+    use std::{
+        fs,
+        time::{Duration, Instant},
+    };
+
+    #[test]
+    fn mostrar_a_janela_consulta_de_novo_so_depois_da_folga() {
+        // Nunca consultou: vale. Consultou agora há pouco: não vale. Passou a
+        // folga: vale de novo. É o que impede abrir-e-fechar virar telemetria.
+        let folga = Duration::from_secs(600);
+        let agora = Instant::now();
+
+        assert!(consulta_vale_a_pena(None, agora, folga));
+        assert!(!consulta_vale_a_pena(Some(agora), agora, folga));
+        assert!(!consulta_vale_a_pena(
+            Some(agora - Duration::from_secs(599)),
+            agora,
+            folga
+        ));
+        assert!(consulta_vale_a_pena(
+            Some(agora - Duration::from_secs(600)),
+            agora,
+            folga
+        ));
+    }
 
     #[test]
     fn extrai_somente_as_rotas_reais_do_log() {

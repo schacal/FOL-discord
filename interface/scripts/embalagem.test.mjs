@@ -461,6 +461,27 @@ test("a release publica o nome de setup que a janela instalada procura", async (
   );
 });
 
+test("trazer a janela da bandeja consulta se saiu versão nova", async () => {
+  // Só ao abrir e a cada seis horas não bastava: a janela passa o dia
+  // escondida, e quem clicava nela logo depois de uma release não via aviso.
+  // A folga entre consultas fica na ponte, para abrir-e-fechar não virar rajada.
+  const [ciclo, ponte] = await Promise.all([
+    readFile(cicloDeVida, "utf8"),
+    readFile(ponteNativa, "utf8"),
+  ]);
+
+  assert.match(
+    ciclo,
+    /fn mostrar\(app: &AppHandle\) \{[\s\S]*?servico::verificar_atualizacao_ao_mostrar\(\);[\s\S]*?\n\}/,
+    "mostrar() precisa disparar a consulta de atualização",
+  );
+  assert.match(
+    ponte,
+    /const FOLGA_AO_MOSTRAR: Duration = Duration::from_secs\(\d+ \* 60\);/,
+    "a consulta ao mostrar precisa de folga mínima entre chamadas",
+  );
+});
+
 test("a release publica soma de verificação e atestado de procedência", async () => {
   // Sem certificado de assinatura de código, são as duas únicas provas que quem
   // baixa tem de que o arquivo saiu deste repositório.
