@@ -1,7 +1,5 @@
-<h1 align="center">FOL-discord</h1>
-
 <p align="center">
-  <i><b>F</b>az <b>O</b> <b>L</b>ink sair do país — e voltar.</i>
+  <img src="assets/banner.png" alt="FOL-discord — Faz o Link sair do país, e voltar" width="100%">
 </p>
 
 <p align="center">
@@ -101,6 +99,7 @@ fol-discord/
 │   ├── pac.rs         o arquivo PAC que o Windows lê
 │   └── windows.rs     as duas chaves de registro, e como desfazê-las
 ├── docs/
+├── assets/
 ├── install.ps1
 └── .github/workflows/release.yml
 ```
