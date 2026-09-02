@@ -166,6 +166,13 @@ impl Sessao {
         self.travar().fase
     }
 
+    /// Há quanto tempo a janela atual está armada — desde que abriu, mesmo
+    /// que já tenha fechado. É o que o vigia usa para logar quanto durou a
+    /// abertura, sem precisar saber a hora em que ela começou.
+    pub fn armada_ha(&self, agora: Instant) -> Duration {
+        agora.saturating_duration_since(self.travar().armada_em)
+    }
+
     /// Uma conexão começou a ser aberta pelo exterior. Só as que decidem a
     /// região seguram a janela e alimentam o relógio; para as outras — CDN,
     /// voz, anexos — não há guard nenhum, e é isto que deixa a janela fechar
@@ -585,6 +592,24 @@ mod tests {
             assinatura.try_recv().is_err(),
             "um aviso só; a conexão não é derrubada duas vezes"
         );
+    }
+
+    #[test]
+    fn armada_ha_mede_desde_a_ultima_reabertura() {
+        let t = t0();
+        let s = com_discord(t);
+
+        // Conta desde que a janela abriu, mesmo depois de ela fechar — é o
+        // que a linha "sessão aberta após N s" do vigia usa.
+        decisao(&s, t);
+        s.avaliar(t + SILENCIO, COM_EXTERIOR);
+        assert_eq!(s.armada_ha(t + SILENCIO), SILENCIO);
+
+        // Um Discord novo rearma: a contagem recomeça da reabertura, não da
+        // sessão anterior.
+        let depois = t + Duration::from_secs(60);
+        s.observar_discord(id(200), depois);
+        assert_eq!(s.armada_ha(depois + Duration::from_secs(5)), Duration::from_secs(5));
     }
 
     #[test]

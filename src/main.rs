@@ -348,8 +348,13 @@ fn vigiar_sessao(sessao: std::sync::Arc<sessao::Sessao>, piscina: pool::Pool) {
         if sessao.avaliar(agora, piscina.quantidade() > 0) {
             // A região já está gravada na sessão. Daqui em diante o Discord
             // fala direto, e quem ficou preso no exterior acabou de cair para
-            // reconectar pelo caminho curto — a VPN desligou.
-            socks::log::linha("sessão aberta; o Discord volta a falar direto");
+            // reconectar pelo caminho curto — a VPN desligou. A duração conta
+            // desde que a janela armou, e ajuda a ler o log sem contar linha
+            // por linha.
+            let duracao = sessao.armada_ha(agora).as_secs();
+            socks::log::linha(&format!(
+                "sessão aberta após {duracao} s; o Discord volta a falar direto"
+            ));
         }
 
         std::thread::sleep(INTERVALO_VIGIA);
