@@ -22,11 +22,11 @@ Não é nada, mas também não é zero:
 
 **Ele vê os nomes dos domínios.** O SNI do TLS viaja em claro, então ele sabe que você falou com `discord.com`. Sabe *que* você usa Discord — não sabe nada sobre *o que* você faz lá.
 
-**Ele vê tamanho e ritmo do tráfego.** São alguns kilobytes na abertura da sessão.
+**Ele vê tamanho e ritmo do tráfego.** É o que o Discord baixa na abertura — a entrada, o gateway e as imagens e anexos que ele carrega nesse primeiro minuto. Depois disso, nada.
 
 **Ele pode derrubar a conexão, não lê-la.** Um proxy hostil consegue recusar ou cortar. O programa trata isso: rebaixa quem falha e, se não houver nenhum saudável, entrega a conexão direto. O pior caso é você ficar sem a correção — nunca sem Discord.
 
-Vale a comparação: seu provedor de internet já vê exatamente essas mesmas três coisas, o tempo todo, em todo o seu tráfego. Aqui o alcance é menor — três domínios, alguns segundos por sessão.
+Vale a comparação: seu provedor de internet já vê exatamente essas mesmas três coisas, o tempo todo, em todo o seu tráfego. Aqui o alcance é menor — só domínios do Discord, e só durante a abertura da sessão.
 
 ## As listas de proxies são conteúdo não confiável
 
@@ -61,6 +61,8 @@ Nada é escrito em `HKLM`, em `Arquivos de Programas` ou no diretório do Discor
 ## As portas locais não estão expostas
 
 Os servidores escutam em `127.0.0.1` — não em `0.0.0.0`. Ninguém na sua rede local, e muito menos na internet, alcança as portas 9250 ou 9251. Só programas rodando na sua própria máquina, que de todo modo já poderiam abrir conexões por conta própria.
+
+E o proxy local só encaminha para fora destinos do Discord. Qualquer outro destino que um programa local peça a ele sai direto, sempre — a decisão é por lista de domínios do Discord, nunca por "tudo o que chegar". Ele não é um relay estrangeiro de uso geral, nem durante a janela de abertura: o máximo que outro programa consegue é falar com o próprio Discord pelo mesmo caminho que o Discord usa.
 
 | Porta | O quê |
 | --- | --- |
@@ -111,11 +113,11 @@ As dependências de terceiros dela são poucas e todas MIT, e o `.exe` publicado
 
 ## Verificando por conta própria
 
-O código é curto o bastante para ser lido inteiro — cerca de 1.600 linhas em oito arquivos no serviço. Os pontos que valem conferir:
+O código é curto o bastante para ser lido inteiro — cerca de 2.900 linhas em nove arquivos no serviço, um quarto delas testes. Os pontos que valem conferir:
 
 | O que verificar | Onde |
 | --- | --- |
-| Que só três domínios saem por fora | [`src/routing.rs`](../src/routing.rs) |
+| Que só domínios do Discord saem por fora, e só na abertura | [`src/routing.rs`](../src/routing.rs), [`src/sessao.rs`](../src/sessao.rs) |
 | Que as portas escutam só em `127.0.0.1` | [`src/socks.rs`](../src/socks.rs), [`src/pac.rs`](../src/pac.rs) |
 | Que nada além do PAC e do autostart é escrito | [`src/windows.rs`](../src/windows.rs) |
 | Que nenhum certificado é instalado | qualquer arquivo — não existe esse código |

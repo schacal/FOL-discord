@@ -64,23 +64,28 @@ O Discord decide a região da sua sessão pelo IP que enxerga **no momento em qu
 abre**, e essa decisão vale para a sessão inteira. Quando ela sai errada, a
 transmissão de tela e a câmera param.
 
-A gambiarra conhecida era abrir o Discord com VPN e desligar depois. Isto faz o
-mesmo, sozinho, sem VPN, e só nas conexões que decidem a região:
+A gambiarra conhecida era abrir o Discord com VPN e desligar depois. Isto faz
+exatamente o mesmo, sozinho e sem VPN:
 
-| Sai por um IP estrangeiro | Sai direto, como sempre |
+1. O Discord abre e **tudo o que é dos domínios do Discord** sai por um IP
+   estrangeiro — a entrada, o gateway, a CDN, os anexos.
+2. A sessão nasce com esse IP, e a região fica gravada nela.
+3. Assim que a abertura termina, o programa derruba o que estava saindo por
+   fora. É a VPN desligando.
+4. O Discord reconecta sozinho, direto, pelo caminho curto. **A região continua
+   a de fora**, porque já está gravada na sessão.
+
+| Durante a abertura | Depois dela |
 | --- | --- |
-| `discord.com` | **Áudio, câmera e transmissão de tela** |
-| `gateway.discord.gg` | `cdn.discordapp.com` e imagens |
-| `latency.discord.media` | Todo o resto da internet |
+| Tudo o que é do Discord sai por um IP estrangeiro | Tudo sai direto, como sempre |
+| `discord.com`, gateway, CDN, anexos | Inclusive o `discord.com` e o gateway, por onde passam as suas mensagens |
 
-E só enquanto a sessão está nascendo. Assim que a rajada de abertura passa, o
-desvio acaba: **tudo volta a sair direto**, inclusive o `discord.com` e o
-gateway, que são por onde passam as suas mensagens. O que estava saindo pelo
-exterior é derrubado nessa hora, e o Discord reconecta sozinho pelo caminho
-curto — a mesma coisa que desligar a VPN depois de abrir.
+O que nunca passa por proxy nenhum, em momento nenhum: **áudio, câmera e
+transmissão de tela**, que viajam em UDP, e todo o resto da internet.
 
-O programa fica de olho no Discord. Quando ele reinicia, a sessão é outra e a
-região vai ser decidida de novo, então a janela reabre por conta própria.
+O programa fica de olho no Discord. Quando ele reinicia, ou fecha e volta, a
+sessão é outra e a região vai ser decidida de novo, então a janela reabre por
+conta própria.
 
 **De onde vem o IP estrangeiro:** de proxies SOCKS5 públicos, de listas abertas,
 operados por gente que ninguém conhece. O programa testa cada candidato e só usa
@@ -137,10 +142,7 @@ fol-discord desinstalar         # remove tudo
 fol-discord instalar                   # liga a correção e reinicia o Discord
 fol-discord rodar                      # primeiro plano, para depurar
 fol-discord instalar --sem-reiniciar   # não mexe no Discord aberto
-fol-discord instalar --tudo-discord    # manda todo domínio do Discord pelo exterior
 ```
-
-A última é rede de segurança, caso a correção padrão não baste na sua máquina.
 
 Se o terminal disser `não é reconhecido como nome de cmdlet`, ele está com o
 PATH antigo — abra uma janela nova, ou use o caminho completo:
@@ -156,7 +158,10 @@ PATH antigo — abra uma janela nova, ou use o caminho completo:
 O tráfego é HTTPS em túnel: quem opera o proxy vê **que** você falou com o
 Discord — nunca o conteúdo, o token ou as mensagens. E vê só durante a abertura
 da sessão: passado esse minuto o desvio acaba, as suas mensagens deixam de
-passar por ele e nada mais do seu uso atravessa proxy nenhum. Nenhum certificado
+passar por ele e nada mais do seu uso atravessa proxy nenhum. O proxy local
+também só encaminha para fora destinos do Discord: para qualquer outro
+destino, de qualquer programa, ele sai direto — não é um relay estrangeiro de
+uso geral. Nenhum certificado
 raiz é instalado, nenhum arquivo do Discord é modificado, nada roda como
 administrador.
 
