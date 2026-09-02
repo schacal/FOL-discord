@@ -10,7 +10,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use tokio::task::JoinSet;
+use tokio::{sync::Notify, task::JoinSet};
 
 const LISTAS: &[&str] = &[
     "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt",
@@ -25,6 +25,10 @@ const SONDA: &str = "https://latency.discord.media/rtc";
 const ALVO_SAUDAVEIS: usize = 5;
 const VALIDACOES_SIMULTANEAS: usize = 60;
 const TIMEOUT_VALIDACAO: Duration = Duration::from_secs(8);
+
+/// Abaixo disto a piscina está magra e a manutenção reabastece. É também o
+/// ponto em que ela acorda antes da hora — ver `esperar_secar`.
+pub const MINIMO_SAUDAVEIS: usize = 3;
 
 /// Todo tráfego do serviço se identifica. Requisição HTTP anônima saindo de um
 /// processo sem janela é sinal barato para sandbox e feed de reputação — e é
@@ -48,21 +52,34 @@ pub struct Upstream {
 #[derive(Clone)]
 pub struct Pool {
     saudaveis: Arc<Mutex<Vec<Upstream>>>,
+    secou: Arc<Notify>,
 }
 
 impl Pool {
     pub fn nova() -> Self {
         Self {
             saudaveis: Arc::new(Mutex::new(Vec::new())),
+            secou: Arc::new(Notify::new()),
         }
     }
 
     /// Melhor upstream disponível, ou `None` se a piscina está seca.
+    #[cfg(test)]
     pub fn melhor(&self) -> Option<String> {
+        self.melhor_exceto(&[])
+    }
+
+    /// Melhor upstream fora de `exceto`, ou `None` se não sobrou nenhum. É o
+    /// que dá à segunda tentativa de uma conexão um proxy diferente do que
+    /// acabou de falhar: `marcar_falha` só elimina na segunda falha, então sem
+    /// isto a segunda volta pegava o mesmo endereço e gastava outro prazo
+    /// inteiro nele — e a conexão caía para direto com a piscina cheia.
+    pub fn melhor_exceto(&self, exceto: &[String]) -> Option<String> {
         self.saudaveis
             .lock()
             .ok()?
-            .first()
+            .iter()
+            .find(|u| !exceto.contains(&u.endereco))
             .map(|u| u.endereco.clone())
     }
 
@@ -76,11 +93,37 @@ impl Pool {
 
     /// Registra que um upstream falhou em uso. Duas falhas e ele sai da fila.
     pub fn marcar_falha(&self, endereco: &str) {
-        if let Ok(mut v) = self.saudaveis.lock() {
-            if let Some(u) = v.iter_mut().find(|u| u.endereco == endereco) {
-                u.falhas += 1;
+        let magra = match self.saudaveis.lock() {
+            Ok(mut v) => {
+                if let Some(u) = v.iter_mut().find(|u| u.endereco == endereco) {
+                    u.falhas += 1;
+                }
+                v.retain(|u| u.falhas < 2);
+                v.len() < MINIMO_SAUDAVEIS
             }
-            v.retain(|u| u.falhas < 2);
+            Err(_) => false,
+        };
+        if magra {
+            self.secou.notify_one();
+        }
+    }
+
+    /// Resolve quando a piscina cai abaixo do mínimo em uso. É o que acorda a
+    /// manutenção antes da hora: sem isto, uma piscina que secasse logo depois
+    /// de uma passada ficava seca por até cinco minutos — e a janela de
+    /// abertura, que não vence sem proxy, ficava aberta esse tempo todo com
+    /// o Discord caindo para direto. Com todo o Discord saindo pelo exterior
+    /// na abertura, secar ficou bem mais fácil.
+    ///
+    /// Só volta quando a piscina está magra de fato: um aviso guardado
+    /// enquanto a manutenção estava ocupada reabastecendo não conta, porque a
+    /// piscina que ele descrevia já foi trocada.
+    pub async fn esperar_secar(&self) {
+        loop {
+            self.secou.notified().await;
+            if self.quantidade() < MINIMO_SAUDAVEIS {
+                return;
+            }
         }
     }
 
@@ -193,8 +236,71 @@ async fn validar(endereco: String) -> Option<Upstream> {
 }
 
 #[cfg(test)]
+impl Pool {
+    /// Uma piscina já cheia, na ordem dada, para os testes de quem a consome.
+    pub fn de_teste(enderecos: &[&str]) -> Self {
+        let p = Pool::nova();
+        p.definir(
+            enderecos
+                .iter()
+                .enumerate()
+                .map(|(i, e)| Upstream {
+                    endereco: e.to_string(),
+                    latencia: Duration::from_millis(100 * (i as u64 + 1)),
+                    regiao: "rotterdam".into(),
+                    falhas: 0,
+                })
+                .collect(),
+        );
+        p
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    fn upstream(endereco: &str, latencia_ms: u64) -> Upstream {
+        Upstream {
+            endereco: endereco.into(),
+            latencia: Duration::from_millis(latencia_ms),
+            regiao: "rotterdam".into(),
+            falhas: 0,
+        }
+    }
+
+    #[test]
+    fn a_segunda_escolha_pula_quem_acabou_de_falhar() {
+        let p = Pool::de_teste(&["a:1080", "b:1080"]);
+        assert_eq!(p.melhor().as_deref(), Some("a:1080"));
+
+        // Uma falha ainda perdoa o primeiro — ele continua na fila e na
+        // frente. Mas quem acabou de vê-lo falhar não tem por que insistir.
+        p.marcar_falha("a:1080");
+        assert_eq!(p.melhor().as_deref(), Some("a:1080"));
+        assert_eq!(p.melhor_exceto(&["a:1080".into()]).as_deref(), Some("b:1080"));
+        assert_eq!(p.melhor_exceto(&["a:1080".into(), "b:1080".into()]), None);
+    }
+
+    #[tokio::test]
+    async fn aviso_velho_nao_acorda_a_manutencao_com_a_piscina_cheia() {
+        let p = Pool::de_teste(&["a:1080"]);
+
+        // A piscina secou enquanto a manutenção estava ocupada — e depois foi
+        // reposta. O aviso guardado descreve uma piscina que já não existe.
+        p.marcar_falha("a:1080");
+        p.definir(
+            (0..MINIMO_SAUDAVEIS + 1)
+                .map(|i| upstream(&format!("10.0.0.{i}:1080"), 100))
+                .collect(),
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), p.esperar_secar())
+                .await
+                .is_err(),
+            "com a piscina cheia não há o que reabastecer"
+        );
+    }
 
     #[test]
     fn reconhece_ip_porta() {
@@ -208,12 +314,7 @@ mod tests {
     #[test]
     fn duas_falhas_removem_da_fila() {
         let p = Pool::nova();
-        p.definir(vec![Upstream {
-            endereco: "1.2.3.4:1080".into(),
-            latencia: Duration::from_millis(100),
-            regiao: "rotterdam".into(),
-            falhas: 0,
-        }]);
+        p.definir(vec![upstream("1.2.3.4:1080", 100)]);
         assert_eq!(p.quantidade(), 1);
         p.marcar_falha("1.2.3.4:1080");
         assert_eq!(p.quantidade(), 1, "uma falha ainda perdoa");
@@ -221,22 +322,50 @@ mod tests {
         assert_eq!(p.quantidade(), 0, "duas falhas eliminam");
     }
 
+    #[tokio::test]
+    async fn secar_acorda_a_manutencao() {
+        let p = Pool::nova();
+        p.definir(vec![upstream("1.2.3.4:1080", 100)]);
+
+        // Uma falha ainda perdoa o upstream e a fila não mudou de tamanho —
+        // mas com um só ela já está abaixo do mínimo, então avisa.
+        p.marcar_falha("1.2.3.4:1080");
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), p.esperar_secar())
+                .await
+                .is_ok(),
+            "abaixo do mínimo a manutenção tem que acordar"
+        );
+    }
+
+    #[tokio::test]
+    async fn piscina_cheia_nao_acorda_a_manutencao() {
+        let p = Pool::nova();
+        p.definir(
+            (0..MINIMO_SAUDAVEIS + 1)
+                .map(|i| upstream(&format!("10.0.0.{i}:1080"), 100))
+                .collect(),
+        );
+
+        p.marcar_falha("10.0.0.0:1080");
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), p.esperar_secar())
+                .await
+                .is_err(),
+            "uma falha numa piscina cheia não é motivo para reabastecer"
+        );
+    }
+
     #[test]
     fn melhor_e_o_de_menor_latencia() {
         let p = Pool::nova();
         p.definir(vec![
-            Upstream {
-                endereco: "lento:1080".into(),
-                latencia: Duration::from_millis(900),
-                regiao: "frankfurt".into(),
-                falhas: 0,
+            {
+                let mut u = upstream("lento:1080", 900);
+                u.regiao = "frankfurt".into();
+                u
             },
-            Upstream {
-                endereco: "rapido:1080".into(),
-                latencia: Duration::from_millis(120),
-                regiao: "rotterdam".into(),
-                falhas: 0,
-            },
+            upstream("rapido:1080", 120),
         ]);
         assert_eq!(p.melhor().unwrap(), "rapido:1080");
     }

@@ -2,9 +2,11 @@
 //!
 //! O Discord decide a região da sua sessão pelo IP que enxerga na abertura.
 //! Em vários provedores brasileiros essa decisão sai errada e a transmissão de
-//! tela para de funcionar. Este programa faz só o punhado de conexões que
-//! determinam essa decisão sair por um IP estrangeiro. A voz, a tela e o resto
-//! da internet continuam saindo direto, com o ping de sempre.
+//! tela para de funcionar. Este programa faz o mesmo que ligar uma VPN para
+//! abrir o Discord e desligá-la assim que ele entrou: enquanto a sessão está
+//! nascendo, todo o tráfego do Discord sai por um IP estrangeiro; depois,
+//! tudo volta a sair direto, com o ping de sempre, e a região fica gravada na
+//! sessão. A voz, a câmera e a tela são UDP e nunca passam por aqui.
 
 #![windows_subsystem = "windows"]
 
@@ -18,7 +20,6 @@ mod socks;
 mod windows;
 
 use anyhow::{Context, Result};
-use routing::Modo;
 use std::{ffi::OsStr, path::PathBuf, process::Command, time::Duration};
 
 #[cfg(windows)]
@@ -26,7 +27,6 @@ use std::os::windows::process::CommandExt;
 
 const PORTA_SOCKS: u16 = 9250;
 const PORTA_PAC: u16 = 9251;
-const MINIMO_SAUDAVEIS: usize = 3;
 const INTERVALO_MANUTENCAO: Duration = Duration::from_secs(300);
 
 /// Passada do vigia da sessão. Curto o bastante para a janela fechar logo
@@ -121,11 +121,6 @@ fn main() -> Result<()> {
     anexar_console();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let modo = if args.iter().any(|a| a == "--tudo-discord") {
-        Modo::TudoDiscord
-    } else {
-        Modo::Controle
-    };
     let comando = args
         .iter()
         .find(|a| !a.starts_with("--"))
@@ -137,7 +132,7 @@ fn main() -> Result<()> {
         "desinstalar" => desinstalar(manter_arquivos(&args)),
         "status" => status(),
         "reiniciar-discord" => reiniciar_discord(),
-        "rodar" => rodar(modo),
+        "rodar" => rodar(),
         _ => {
             ajuda();
             Ok(())
@@ -158,9 +153,7 @@ fn ajuda() {
          --sem-reiniciar           não mexe no Discord aberto; a correção vale na\n                            \
          próxima vez que você abrir\n  \
          --sem-autostart           não cria a entrada Run legada (uso do setup)\n  \
-         --manter-arquivos         limpa a configuração sem apagar a pasta instalada\n  \
-         --tudo-discord            manda todo domínio do Discord pro exterior\n                            \
-         (use só se a correção padrão não bastar)\n",
+         --manter-arquivos         limpa a configuração sem apagar a pasta instalada\n",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -342,14 +335,20 @@ fn vigiar_sessao(sessao: std::sync::Arc<sessao::Sessao>, piscina: pool::Pool) {
     std::thread::spawn(move || loop {
         let agora = std::time::Instant::now();
 
-        if sessao.observar_discord(&discord::pids(), agora) {
-            socks::log::linha("Discord novo no ar; a correção vale para esta sessão");
+        match sessao.observar_discord(discord::principal(), agora) {
+            Some(sessao::Mudanca::DiscordNovo) => {
+                socks::log::linha("Discord novo no ar; a correção vale para esta sessão");
+            }
+            Some(sessao::Mudanca::DiscordFechou) => {
+                socks::log::linha("Discord fechou; a janela reabre para a próxima abertura");
+            }
+            None => {}
         }
 
         if sessao.avaliar(agora, piscina.quantidade() > 0) {
             // A região já está gravada na sessão. Daqui em diante o Discord
             // fala direto, e quem ficou preso no exterior acabou de cair para
-            // reconectar pelo caminho curto.
+            // reconectar pelo caminho curto — a VPN desligou.
             socks::log::linha("sessão aberta; o Discord volta a falar direto");
         }
 
@@ -357,7 +356,7 @@ fn vigiar_sessao(sessao: std::sync::Arc<sessao::Sessao>, piscina: pool::Pool) {
     });
 }
 
-fn rodar(modo: Modo) -> Result<()> {
+fn rodar() -> Result<()> {
     let _ = std::fs::create_dir_all(pasta_dados());
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -372,7 +371,7 @@ fn rodar(modo: Modo) -> Result<()> {
             let p = piscina.clone();
             async move {
                 loop {
-                    if p.quantidade() < MINIMO_SAUDAVEIS {
+                    if p.quantidade() < pool::MINIMO_SAUDAVEIS {
                         socks::log::linha("reabastecendo a piscina de proxies...");
                         match p.reabastecer().await {
                             Ok(n) => {
@@ -402,7 +401,19 @@ fn rodar(modo: Modo) -> Result<()> {
                     // Um travessão em "Última checagem" tem que querer dizer
                     // "o serviço não olhou", não "o serviço olhou e falhou".
                     registrar_checagem_em(&caminho_ultima_validacao(), milissegundos_agora());
-                    tokio::time::sleep(INTERVALO_MANUTENCAO).await;
+
+                    // A próxima passada é daqui a cinco minutos — a menos que a
+                    // piscina seque antes. Com todo o Discord saindo pelo
+                    // exterior na abertura, um proxy ruim é rebaixado em duas
+                    // conexões, e esperar cinco minutos com a piscina vazia
+                    // seria cinco minutos de janela aberta sem para onde
+                    // desviar.
+                    tokio::select! {
+                        _ = tokio::time::sleep(INTERVALO_MANUTENCAO) => {}
+                        _ = p.esperar_secar() => {
+                            socks::log::linha("a piscina ficou magra; a manutenção acordou antes da hora");
+                        }
+                    }
                 }
             }
         });
@@ -413,7 +424,7 @@ fn rodar(modo: Modo) -> Result<()> {
             }
         });
 
-        socks::servir(PORTA_SOCKS, piscina, modo, sessao).await
+        socks::servir(PORTA_SOCKS, piscina, sessao).await
     })
 }
 
