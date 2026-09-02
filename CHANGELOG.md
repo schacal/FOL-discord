@@ -3,6 +3,46 @@
 Cada versão publicada em [Releases](https://github.com/schacal/FOL-discord/releases)
 e o que mudou nela. Datas no formato ano-mês-dia.
 
+## 0.2.8 — 2026-09-02
+
+**As mensagens voltaram a sair direto.** O desvio pelo exterior não tinha hora
+para acabar: `discord.com` e `gateway.discord.gg` continuavam saindo por um
+proxy público pela sessão inteira. Como são justamente o caminho das mensagens
+— e o gateway é um websocket que fica de pé por horas —, cada mensagem pagava a
+latência do proxy. Medido nesta máquina:
+
+| | Direto | Pelo proxy |
+| --- | --- | --- |
+| `discord.com/api` | 0,06 s | 2,1 s |
+| `gateway.discord.gg` | 0,20 s | 2,9 s a 11,3 s |
+
+Também era isso o que fazia o Discord parecer reiniciar sozinho: o proxy
+gratuito derrubava o websocket, o Discord reconectava do zero, e a reconexão
+saía pelo mesmo caminho lento.
+
+Agora o desvio tem janela. Ele vale enquanto a sessão está nascendo — que é o
+único momento em que o IP é lido — e acaba quando a rajada de abertura passa:
+10 segundos sem conexão de controle nova, com teto de 90 segundos. Ao fechar, o
+programa derruba o que ele mesmo abriu pelo exterior, e o Discord reconecta
+direto com `RESUME`, mantendo a sessão e a região. É o mesmo efeito de desligar
+a VPN depois de abrir o Discord.
+
+A janela não começa a contar antes de a piscina ter proxy validado: no logon o
+serviço sobe primeiro, e deixar a janela vencer nesse vão faria o Discord abrir
+sem correção nenhuma.
+
+**Reinício do Discord re-arma a correção.** O serviço compara os processos
+`Discord.exe` a cada segundo e reabre a janela quando nenhum dos anteriores
+sobrou — um Discord novo tem sessão nova, e a região dele ainda vai ser
+decidida. Renderizador que nasce ou morre no meio do uso não conta.
+
+**`status.discord.com` parou de sair pelo exterior.** Casava com `discord.com` e
+ia para o proxy sem comprar nada: é a página pública de avisos, não participa da
+decisão de região.
+
+A voz, a câmera e a transmissão de tela não mudaram — são UDP e nunca passaram
+pelo proxy.
+
 ## 0.2.7 — 2026-09-01
 
 **Atualização.** A janela consultava a última release ao abrir e depois só de

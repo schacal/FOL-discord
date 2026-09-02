@@ -30,22 +30,44 @@ O incômodo é ter que repetir isso toda vez — e o Discord reconecta sozinho d
 
 ## O que este programa faz
 
-A mesma coisa, sozinho, e só com as conexões que realmente decidem a região.
+A mesma coisa, sozinho: desvia as conexões que decidem a região, e desfaz o desvio quando a sessão já nasceu.
 
 ```mermaid
 flowchart LR
     D[Discord] -->|PAC do Windows| P[proxy local<br/>127.0.0.1:9250]
-    P -->|discord.com<br/>gateway.discord.gg<br/>latency.discord.media| E[proxy estrangeiro]
-    P -->|cdn, imagens| I[(internet)]
+    P -->|só na abertura:<br/>discord.com<br/>gateway.discord.gg<br/>latency.discord.media| E[proxy estrangeiro]
+    P -->|sessão aberta:<br/>tudo, inclusive mensagens| I[(internet)]
     D -.->|áudio, vídeo e tela<br/>UDP, nunca passa pelo proxy| I
     E --> I
 ```
 
-O ponto que faz isso valer a pena: **o áudio, o vídeo e a transmissão de tela viajam em UDP e não passam pelo proxy**. O proxy do Windows só afeta TCP. Então a correção custa cerca de 14 conexões e alguns kilobytes na abertura, e o ping fica exatamente igual.
+O ponto que faz isso valer a pena: **o áudio, o vídeo e a transmissão de tela viajam em UDP e não passam pelo proxy**. O proxy do Windows só afeta TCP.
 
 Melhor ainda: o servidor de voz que você recebe continua sendo o brasileiro. Confirmado no log, o Discord entregou `c-gru17` e `c-gru18` — GRU é São Paulo.
 
-## As quatro peças
+## A janela de abertura
+
+O IP estrangeiro é lido **uma vez**. Depois disso a região está gravada na sessão, e cada conexão que continuasse saindo por fora seria latência pura, comprando correção nenhuma.
+
+Isso importa porque o `discord.com` e o `gateway.discord.gg` não são só endpoints de login: são o caminho das suas mensagens. O gateway é um websocket que fica de pé por horas e entrega toda mensagem que você recebe. Deixá-lo preso num proxy público gratuito custa caro. Medido nesta máquina, com o desvio permanente:
+
+| | Direto | Pelo proxy |
+| --- | --- | --- |
+| `discord.com/api` | 0,06 s | 2,1 s |
+| `gateway.discord.gg` | 0,20 s | 2,9 s a 11,3 s |
+
+Por isso o desvio tem hora para acabar. O `src/sessao.rs` guarda em que fase a sessão está:
+
+- **Abertura** — os hosts de controle saem pelo exterior.
+- **Estabelecida** — tudo sai direto, sem exceção.
+
+A janela fecha depois de 10 segundos sem nenhuma conexão de controle nova, com teto de 90 segundos. Ela não começa a contar enquanto a piscina estiver vazia: no logon o serviço sobe antes de ter validado o primeiro proxy, e deixar a janela vencer nesse vão faria o Discord abrir sem correção.
+
+Ao fechar, o programa **derruba as conexões que ele mesmo abriu pelo exterior**. Não dá para mover uma conexão TCP viva de rota, então o jeito de tirar o gateway do proxy é fechá-lo: o Discord percebe, reconecta com `RESUME` — mesma sessão, mesma região — e agora pelo caminho curto. É exatamente o que acontece quando você desliga a VPN depois de abrir o Discord, que é a correção manual que este projeto automatiza.
+
+A janela reabre quando o Discord reinicia. O programa compara os processos `Discord.exe` a cada segundo e re-arma quando nenhum dos anteriores sobrou — o que distingue um reinício de verdade de um renderizador que nasceu ou morreu no meio do uso. O botão **Reiniciar Discord** da janela cai nesse mesmo caminho.
+
+## As peças
 
 ### 1. Proxy local (`src/socks.rs`)
 
@@ -55,16 +77,19 @@ Se não houver nenhum proxy estrangeiro disponível, ele entrega a conexão dire
 
 ### 2. Roteamento (`src/routing.rs`)
 
-Decide, por host, quem sai por fora:
+Decide, por host, quem sai por fora — e só enquanto a sessão está na fase de abertura:
 
-| Sai pelo exterior | Sai direto |
+| Sai pelo exterior, na abertura | Sai direto, sempre |
 | --- | --- |
 | `discord.com` | `cdn.discordapp.com` |
 | `gateway.discord.gg` | `media.discordapp.net` |
-| `latency.discord.media` | servidores de voz (`c-gru*.discord.media`) |
+| `latency.discord.media` | `status.discord.com` |
+| | servidores de voz (`c-gru*.discord.media`) |
 | | todo o resto da internet |
 
-A separação é o que preserva o ping: a CDN é volume puro e a voz precisa de rota curta, então nenhuma das duas dá um passo a mais.
+Com a sessão já aberta, a coluna da esquerda deixa de existir: `decidir` devolve `Direta` para tudo.
+
+A separação é o que preserva o ping: a CDN é volume puro e a voz precisa de rota curta, então nenhuma das duas dá um passo a mais. O `status.discord.com` está na lista dos que nunca saem por fora porque casava com `discord.com` e ia parar no exterior sem comprar nada — é a página pública de avisos, não participa da decisão de região.
 
 ### 3. Piscina de proxies (`src/pool.rs`)
 

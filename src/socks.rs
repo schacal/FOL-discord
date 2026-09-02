@@ -6,50 +6,68 @@
 use crate::{
     pool::Pool,
     routing::{self, Modo, Rota},
+    sessao::Sessao,
 };
 use anyhow::{bail, Result};
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc, time::Instant};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    sync::broadcast,
     time::{timeout, Duration},
 };
 
 const CONEXAO_TIMEOUT: Duration = Duration::from_secs(15);
 
-pub async fn servir(porta: u16, pool: Pool, modo: Modo) -> Result<()> {
+pub async fn servir(porta: u16, pool: Pool, modo: Modo, sessao: Arc<Sessao>) -> Result<()> {
     let escuta = TcpListener::bind(("127.0.0.1", porta)).await?;
     log::linha(&format!("proxy local escutando em 127.0.0.1:{porta}"));
 
     loop {
         let (cliente, _) = escuta.accept().await?;
         let pool = pool.clone();
+        let sessao = sessao.clone();
         tokio::spawn(async move {
             let _ = cliente.set_nodelay(true);
-            if let Err(e) = atender(cliente, pool, modo).await {
+            if let Err(e) = atender(cliente, pool, modo, sessao).await {
                 log::linha(&format!("conexão encerrada: {e}"));
             }
         });
     }
 }
 
-async fn atender(mut cliente: TcpStream, pool: Pool, modo: Modo) -> Result<()> {
+async fn atender(
+    mut cliente: TcpStream,
+    pool: Pool,
+    modo: Modo,
+    sessao: Arc<Sessao>,
+) -> Result<()> {
     let (host, porta) = aperto_de_mao(&mut cliente).await?;
-    let rota = routing::decidir(&host, modo);
 
+    // Assinar antes de ler a fase fecha a corrida: se a janela fechar daqui em
+    // diante, esta conexão recebe o aviso e cai junto. Na ordem inversa ela
+    // nasceria no exterior logo depois do aviso e ficaria presa lá.
+    let aviso = sessao.assinar_cancelamento();
+    let rota = routing::decidir(&host, modo, sessao.fase());
+
+    let mut cancelar = None;
     let servidor = match rota {
-        Rota::Exterior => match abrir_pelo_exterior(&pool, &host, porta).await {
-            Ok(s) => {
-                log::linha(&format!("exterior  {host}:{porta}"));
-                s
+        Rota::Exterior => {
+            sessao.registrar_controle(Instant::now());
+            match abrir_pelo_exterior(&pool, &host, porta).await {
+                Ok(s) => {
+                    log::linha(&format!("exterior  {host}:{porta}"));
+                    cancelar = Some(aviso);
+                    s
+                }
+                Err(e) => {
+                    // Sem upstream sadio é melhor entregar direto do que derrubar o
+                    // Discord: perde-se a correção, não a conexão.
+                    log::linha(&format!("exterior indisponível ({e}); {host} vai direto"));
+                    abrir_direto(&host, porta).await?
+                }
             }
-            Err(e) => {
-                // Sem upstream sadio é melhor entregar direto do que derrubar o
-                // Discord: perde-se a correção, não a conexão.
-                log::linha(&format!("exterior indisponível ({e}); {host} vai direto"));
-                abrir_direto(&host, porta).await?
-            }
-        },
+        }
         Rota::Direta => {
             log::linha(&format!("direto    {host}:{porta}"));
             abrir_direto(&host, porta).await?
@@ -57,7 +75,7 @@ async fn atender(mut cliente: TcpStream, pool: Pool, modo: Modo) -> Result<()> {
     };
 
     responder_ok(&mut cliente).await?;
-    encaminhar(cliente, servidor).await
+    encaminhar(cliente, servidor, cancelar).await
 }
 
 /// Lê a saudação e o pedido CONNECT do cliente. Devolve destino e porta.
@@ -195,9 +213,82 @@ async fn recusar(cliente: &mut TcpStream, codigo: u8) -> Result<()> {
     Ok(())
 }
 
-async fn encaminhar(mut a: TcpStream, mut b: TcpStream) -> Result<()> {
-    tokio::io::copy_bidirectional(&mut a, &mut b).await?;
+/// Bombeia os dois lados até um deles fechar — ou até a janela de abertura
+/// fechar, quando `cancelar` está presente.
+///
+/// Só as conexões que saíram pelo exterior recebem a assinatura. Elas são as
+/// únicas que precisam morrer: o websocket do gateway vive horas, e sem esse
+/// empurrão ele ficaria preso no proxy estrangeiro pelo resto da sessão,
+/// carregando toda mensagem por um caminho que já não corrige nada. Derrubar
+/// aqui faz o Discord reconectar direto com RESUME — a mesma coisa que
+/// desligar a VPN depois de abrir o programa, que é a correção manual que este
+/// projeto automatiza.
+async fn encaminhar(
+    mut a: TcpStream,
+    mut b: TcpStream,
+    cancelar: Option<broadcast::Receiver<()>>,
+) -> Result<()> {
+    let Some(mut cancelar) = cancelar else {
+        tokio::io::copy_bidirectional(&mut a, &mut b).await?;
+        return Ok(());
+    };
+
+    tokio::select! {
+        r = tokio::io::copy_bidirectional(&mut a, &mut b) => { r?; }
+        _ = cancelar.recv() => {
+            let _ = a.shutdown().await;
+            let _ = b.shutdown().await;
+        }
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Duas pontas ligadas de verdade, para exercitar o `encaminhar` como ele
+    /// roda em produção — sem simulacro de socket.
+    async fn par() -> (TcpStream, TcpStream) {
+        let escuta = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let endereco = escuta.local_addr().unwrap();
+        let cliente = TcpStream::connect(endereco).await.unwrap();
+        let (servidor, _) = escuta.accept().await.unwrap();
+        (cliente, servidor)
+    }
+
+    #[tokio::test]
+    async fn fechar_a_janela_derruba_quem_saiu_pelo_exterior() {
+        let (a, _guarda_a) = par().await;
+        let (b, _guarda_b) = par().await;
+
+        let (avisar, escutar) = broadcast::channel(1);
+        let bombeando = tokio::spawn(encaminhar(a, b, Some(escutar)));
+
+        // Ninguém mandou nada e ninguém fechou: sem o aviso isto ficaria
+        // parado para sempre, que é o gateway preso no proxy estrangeiro.
+        avisar.send(()).unwrap();
+
+        let fim = timeout(Duration::from_secs(2), bombeando).await;
+        assert!(
+            fim.is_ok(),
+            "a conexão devia ter caído assim que a janela fechou"
+        );
+        assert!(fim.unwrap().unwrap().is_ok());
+    }
+
+    #[tokio::test]
+    async fn conexao_direta_nao_e_derrubada_pela_janela() {
+        let (a, _guarda_a) = par().await;
+        let (b, _guarda_b) = par().await;
+
+        // Sem assinatura: é o caso de quem já ia direto e não deve nada à
+        // janela de abertura.
+        let bombeando = tokio::spawn(encaminhar(a, b, None));
+
+        let fim = timeout(Duration::from_millis(300), bombeando).await;
+        assert!(fim.is_err(), "conexão direta continua de pé");
+    }
 }
 
 pub mod log {

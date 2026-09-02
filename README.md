@@ -73,7 +73,14 @@ mesmo, sozinho, sem VPN, e só nas conexões que decidem a região:
 | `gateway.discord.gg` | `cdn.discordapp.com` e imagens |
 | `latency.discord.media` | Todo o resto da internet |
 
-São 14 conexões e alguns kilobytes na abertura.
+E só enquanto a sessão está nascendo. Assim que a rajada de abertura passa, o
+desvio acaba: **tudo volta a sair direto**, inclusive o `discord.com` e o
+gateway, que são por onde passam as suas mensagens. O que estava saindo pelo
+exterior é derrubado nessa hora, e o Discord reconecta sozinho pelo caminho
+curto — a mesma coisa que desligar a VPN depois de abrir.
+
+O programa fica de olho no Discord. Quando ele reinicia, a sessão é outra e a
+região vai ser decidida de novo, então a janela reabre por conta própria.
 
 **De onde vem o IP estrangeiro:** de proxies SOCKS5 públicos, de listas abertas,
 operados por gente que ninguém conhece. O programa testa cada candidato e só usa

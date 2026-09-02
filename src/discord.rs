@@ -36,6 +36,12 @@ pub fn esta_rodando() -> bool {
     crate::processos::esta_rodando(IMAGEM)
 }
 
+/// Todos os processos do Discord no ar. São vários — o principal, a GPU, cada
+/// renderizador — e é a troca do conjunto inteiro que denuncia um reinício.
+pub fn pids() -> Vec<u32> {
+    crate::processos::pids_por_nome(IMAGEM)
+}
+
 /// Encerra todas as janelas do Discord e só volta quando elas saíram de fato.
 /// A espera é por handle de processo, não por relógio: reabrir cedo demais faz
 /// o Discord fixar de novo a região errada.
