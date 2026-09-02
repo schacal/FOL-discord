@@ -1,6 +1,6 @@
 [package]
 name = "fol-discord-janela"
-version = "0.2.8"
+version = "0.2.9"
 edition = "2021"
 description = "Janela de gerenciamento do FOL-discord"
 license = "MIT"
