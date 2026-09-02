@@ -3,7 +3,8 @@ import { apelidoDeHost } from "../util/hosts";
 import { haQuantoTempo } from "../util/tempo";
 
 /**
- * A prova de que só o que devia está saindo por fora.
+ * A prova de que o desvio acontece na abertura e acaba depois dela: as
+ * linhas mais antigas saem pelo exterior, as mais novas saem direto.
  *
  * A lista atende duas pessoas ao mesmo tempo, e por isso cada linha tem dois
  * textos: o que aquela conexão **é**, em português, para quem só quer saber se
