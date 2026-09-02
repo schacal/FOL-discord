@@ -243,10 +243,19 @@ impl Sessao {
     /// quando ele é outro — um Discord novo tem sessão nova — e quando ele
     /// sumiu de vez, para a janela já estar de pé na próxima abertura.
     ///
+    /// Uma leitura vazia sozinha não prova que ele fechou — ver
+    /// `LEITURAS_ATE_SUMIR` — mas já reabre a janela, sem soltar a identidade
+    /// conhecida nem devolver `Mudanca` nenhuma. Custo aceito: se for mesmo
+    /// transitória, uma sessão já estabelecida ganha uma janela de 30s à toa,
+    /// sem nenhuma linha "Discord novo" no log. É raro, e vale mais do que a
+    /// alternativa — antes, um reinício rápido do Discord podia perder a
+    /// correção: se a primeira conexão do processo novo chegasse antes de o
+    /// vigia completar as três leituras vazias que declaravam o antigo
+    /// fechado, ela saía direto contra uma janela que ainda não tinha
+    /// reaberto.
+    ///
     /// Filho que nasce ou morre no meio do uso não aparece aqui: só o processo
     /// principal identifica o Discord, e é por isso que um Ctrl+R não re-arma.
-    /// Uma leitura vazia também não basta para dizer que ele fechou — ver
-    /// `LEITURAS_ATE_SUMIR`.
     pub fn observar_discord(&self, principal: Option<Identidade>, agora: Instant) -> Option<Mudanca> {
         let mut estado = self.travar();
         match principal {
@@ -265,6 +274,9 @@ impl Sessao {
                 // Já não havia Discord: nada mudou.
                 estado.discord?;
                 estado.leituras_vazias += 1;
+                if estado.leituras_vazias == 1 {
+                    Self::abrir(&mut estado, agora);
+                }
                 if estado.leituras_vazias < LEITURAS_ATE_SUMIR {
                     return None;
                 }
@@ -636,29 +648,33 @@ mod tests {
     }
 
     #[test]
-    fn leitura_vazia_transitoria_nao_rearma() {
+    fn leitura_vazia_ja_reabre_a_janela_sem_soltar_a_identidade() {
         let t = t0();
         let s = com_discord(t);
         decisao(&s, t);
         s.avaliar(t + SILENCIO, COM_EXTERIOR);
+        assert_eq!(s.fase(), Fase::Estabelecida);
 
-        // A lista de processos falhou por um instante e voltou vazia. Antes,
-        // isto zerava o conjunto conhecido e a passada seguinte — com o mesmo
-        // Discord de sempre — era lida como "Discord reiniciou".
+        // A lista de processos falhou por um instante e voltou vazia. Pode
+        // ser transitório — o caso comum — ou pode ser o Discord reiniciando
+        // de verdade, com a leitura seguinte já pegando o processo novo antes
+        // de completarmos as LEITURAS_ATE_SUMIR que provam que ele fechou. A
+        // janela reabre na hora, sem soltar a identidade conhecida, e sem
+        // nenhuma Mudança — o custo aceito é uma janela de 30s à toa quando a
+        // leitura era mesmo só um soluço.
         let depois = t + Duration::from_secs(60);
-        assert_eq!(s.observar_discord(None, depois), None);
-        assert_eq!(s.fase(), Fase::Estabelecida);
-        assert_eq!(s.observar_discord(None, depois + Duration::from_secs(1)), None);
-        assert_eq!(s.fase(), Fase::Estabelecida);
+        assert_eq!(s.observar_discord(None, depois), None, "nenhuma mudança ainda");
+        assert_eq!(s.fase(), Fase::Abertura, "a janela já reabriu");
 
+        // O mesmo Discord volta a aparecer: a identidade não foi solta, então
+        // isto não é um Discord novo.
         assert_eq!(
-            s.observar_discord(id(100), depois + Duration::from_secs(2)),
+            s.observar_discord(id(100), depois + Duration::from_secs(1)),
             None,
             "o mesmo Discord voltou a aparecer: nada mudou"
         );
-        assert_eq!(s.fase(), Fase::Estabelecida);
 
-        // Só a sequência inteira de leituras vazias fecha.
+        // Só a sequência inteira de leituras vazias fecha de vez.
         assert_eq!(
             fechar_discord(&s, depois + Duration::from_secs(10)),
             Some(Mudanca::DiscordFechou)
