@@ -32,8 +32,14 @@ use crate::routing;
 /// saía pelo IP brasileiro; com trinta, sobrou folga nas duas.
 ///
 /// A medição continua valendo com todo o Discord desviado porque o relógio
-/// só ouve esses mesmos três hosts — a CDN e a voz passam pelo exterior sem
-/// mexer nele.
+/// só ouve esses mesmos três hosts — a CDN passa pelo exterior sem mexer
+/// nele, e a voz nem passa.
+///
+/// Só a primeira conexão do gateway em cada abertura alimenta este relógio —
+/// ver `gateway_contado` em `Estado` e o uso em `comecar_aperto`. Sem isso,
+/// cada reconexão do gateway pelo proxy gratuito reiniciava a contagem do
+/// zero: medidas em produção, quatro reconexões numa abertura só esticaram a
+/// janela até bater no teto de 120 s.
 const SILENCIO: Duration = Duration::from_secs(30);
 
 /// Teto absoluto da janela. O silêncio é o critério normal; o teto existe para
@@ -90,6 +96,12 @@ struct Estado {
     /// Conexões com o gateway de pé neste instante, e quando a última caiu.
     gateways: u32,
     gateway_caiu_em: Option<Instant>,
+    /// Se a conexão do gateway desta abertura já alimentou o relógio do
+    /// silêncio. Uma reconexão dele pelo proxy gratuito continua saindo pelo
+    /// exterior e caindo no fechamento — isso é do `socks.rs` — mas só a
+    /// primeira soma para o silêncio, senão o proxy derrubando o gateway
+    /// repetidas vezes estica a janela até o teto.
+    gateway_contado: bool,
 }
 
 pub struct Sessao {
@@ -137,6 +149,7 @@ impl Sessao {
                 leituras_vazias: 0,
                 gateways: 0,
                 gateway_caiu_em: None,
+                gateway_contado: false,
             }),
             cancelar,
         }
@@ -162,6 +175,12 @@ impl Sessao {
             return None;
         }
         let mut estado = self.travar();
+        if routing::e_gateway(host) {
+            if estado.gateway_contado {
+                return None;
+            }
+            estado.gateway_contado = true;
+        }
         estado.em_voo += 1;
         estado.ultimo_aperto = Some(agora);
         Some(ApertoDeMao { sessao: self })
@@ -299,6 +318,7 @@ impl Sessao {
         estado.fase = Fase::Abertura;
         estado.armada_em = agora;
         estado.ultimo_aperto = None;
+        estado.gateway_contado = false;
     }
 
     #[cfg(test)]
@@ -679,6 +699,30 @@ mod tests {
         // do tráfego da sessão antiga.
         assert!(!s.avaliar(depois + Duration::from_secs(9), COM_EXTERIOR));
         assert!(s.avaliar(depois + SILENCIO, COM_EXTERIOR));
+    }
+
+    #[test]
+    fn reconexao_do_gateway_nao_empurra_o_relogio() {
+        let t = t0();
+        let s = com_discord(t);
+
+        // O primeiro gateway da abertura conta normalmente.
+        s.comecar_aperto("gateway.discord.gg", t)
+            .expect("o primeiro gateway decide a região")
+            .terminar_em(t);
+
+        // O proxy gratuito derruba o gateway e o Discord reconecta pelo
+        // exterior de novo. Cada reconexão dessas era uma conexão nova que
+        // decidia região e reiniciava o silêncio — quatro reconexões numa
+        // abertura só, medidas em produção, esticavam a janela até o teto.
+        assert!(
+            s.comecar_aperto("gateway.discord.gg", t + Duration::from_secs(25))
+                .is_none(),
+            "a reconexão do gateway não segura a janela nem empurra o relógio"
+        );
+
+        assert!(s.avaliar(t + Duration::from_secs(30), COM_EXTERIOR));
+        assert_eq!(s.fase(), Fase::Estabelecida);
     }
 
     #[test]
