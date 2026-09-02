@@ -13,6 +13,7 @@ mod pac;
 mod pool;
 mod processos;
 mod routing;
+mod sessao;
 mod socks;
 mod windows;
 
@@ -27,6 +28,10 @@ const PORTA_SOCKS: u16 = 9250;
 const PORTA_PAC: u16 = 9251;
 const MINIMO_SAUDAVEIS: usize = 3;
 const INTERVALO_MANUTENCAO: Duration = Duration::from_secs(300);
+
+/// Passada do vigia da sessão. Curto o bastante para a janela fechar logo
+/// depois do silêncio e para o reinício do Discord ser percebido na hora.
+const INTERVALO_VIGIA: Duration = Duration::from_secs(1);
 
 #[derive(Debug, PartialEq, Eq)]
 struct OpcoesInstalar {
@@ -327,6 +332,31 @@ fn porta_ocupada(porta: u16) -> bool {
     .is_ok()
 }
 
+/// Vigia a janela de abertura, num fio próprio.
+///
+/// Fica fora do runtime de propósito: ler a lista de processos do Windows é
+/// uma chamada bloqueante, e ela não tem por que disputar uma thread com o
+/// tráfego do Discord. Todo o estado da sessão é síncrono, então o fio dá
+/// conta sozinho.
+fn vigiar_sessao(sessao: std::sync::Arc<sessao::Sessao>, piscina: pool::Pool) {
+    std::thread::spawn(move || loop {
+        let agora = std::time::Instant::now();
+
+        if sessao.observar_discord(&discord::pids(), agora) {
+            socks::log::linha("Discord novo no ar; a correção vale para esta sessão");
+        }
+
+        if sessao.avaliar(agora, piscina.quantidade() > 0) {
+            // A região já está gravada na sessão. Daqui em diante o Discord
+            // fala direto, e quem ficou preso no exterior acabou de cair para
+            // reconectar pelo caminho curto.
+            socks::log::linha("sessão aberta; o Discord volta a falar direto");
+        }
+
+        std::thread::sleep(INTERVALO_VIGIA);
+    });
+}
+
 fn rodar(modo: Modo) -> Result<()> {
     let _ = std::fs::create_dir_all(pasta_dados());
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -335,6 +365,8 @@ fn rodar(modo: Modo) -> Result<()> {
 
     rt.block_on(async move {
         let piscina = pool::Pool::nova();
+        let sessao = std::sync::Arc::new(sessao::Sessao::nova(std::time::Instant::now()));
+        vigiar_sessao(sessao.clone(), piscina.clone());
 
         tokio::spawn({
             let p = piscina.clone();
@@ -381,7 +413,7 @@ fn rodar(modo: Modo) -> Result<()> {
             }
         });
 
-        socks::servir(PORTA_SOCKS, piscina, modo).await
+        socks::servir(PORTA_SOCKS, piscina, modo, sessao).await
     })
 }
 

@@ -3,6 +3,56 @@
 Cada versão publicada em [Releases](https://github.com/schacal/FOL-discord/releases)
 e o que mudou nela. Datas no formato ano-mês-dia.
 
+## 0.2.8 — 2026-09-02
+
+**As mensagens voltaram a sair direto.** O desvio pelo exterior não tinha hora
+para acabar: `discord.com` e `gateway.discord.gg` continuavam saindo por um
+proxy público pela sessão inteira. Como são justamente o caminho das mensagens
+— e o gateway é um websocket que fica de pé por horas —, cada mensagem pagava a
+latência do proxy. Medido nesta máquina:
+
+| | Direto | Pelo proxy |
+| --- | --- | --- |
+| `discord.com/api` | 0,06 s | 2,1 s |
+| `gateway.discord.gg` | 0,20 s | 2,9 s a 11,3 s |
+
+Também era isso o que fazia o Discord parecer reiniciar sozinho: o proxy
+gratuito derrubava o websocket, o Discord reconectava do zero, e a reconexão
+saía pelo mesmo caminho lento.
+
+Agora o desvio tem janela. Ele vale enquanto a sessão está nascendo — que é o
+único momento em que o IP é lido — e acaba 30 segundos depois da última conexão
+de controle, com teto de 120 segundos. Ao fechar, o programa derruba o que ele
+mesmo abriu pelo exterior, e o Discord reconecta direto com `RESUME`, mantendo a
+sessão e a região. É o mesmo efeito de desligar a VPN depois de abrir o Discord.
+
+Os 30 segundos saíram de cronometrar a abertura, não de chute: o Discord falou
+com o `discord.com` aos 10 s, com o gateway aos 12 s e só voltou ao
+`latency.discord.media` aos 43 s. Uma janela mais curta fechava no meio dessa
+sequência.
+
+A janela também não vence quando não tem o que corrigir: piscina ainda sem
+proxy validado, Discord fechado, ou aperto de mão com o upstream ainda em voo.
+Cada um desses casos já fez a correção se perder em teste.
+
+**Reinício do Discord re-arma a correção.** O serviço compara os processos
+`Discord.exe` a cada segundo e reabre a janela quando nenhum dos anteriores
+sobrou — um Discord novo tem sessão nova, e a região dele ainda vai ser
+decidida. Renderizador que nasce ou morre no meio do uso não conta. Fechar o
+Discord também reabre a janela, para ela já estar de pé quando ele voltar.
+
+**O que isso custa.** Enquanto a janela está aberta, o gateway passa pelo proxy
+— mais ou menos um minuto depois de abrir o Discord, as mensagens vêm devagar.
+Depois disso ele é derrubado, reconecta direto, e assim fica pelo resto da
+sessão.
+
+**`status.discord.com` parou de sair pelo exterior.** Casava com `discord.com` e
+ia para o proxy sem comprar nada: é a página pública de avisos, não participa da
+decisão de região.
+
+A voz, a câmera e a transmissão de tela não mudaram — são UDP e nunca passaram
+pelo proxy.
+
 ## 0.2.7 — 2026-09-01
 
 **Atualização.** A janela consultava a última release ao abrir e depois só de
