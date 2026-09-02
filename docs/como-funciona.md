@@ -61,7 +61,25 @@ Por isso o desvio tem hora para acabar. O `src/sessao.rs` guarda em que fase a s
 - **Abertura** — os hosts de controle saem pelo exterior.
 - **Estabelecida** — tudo sai direto, sem exceção.
 
-A janela fecha depois de 10 segundos sem nenhuma conexão de controle nova, com teto de 90 segundos. Ela não começa a contar enquanto a piscina estiver vazia: no logon o serviço sobe antes de ter validado o primeiro proxy, e deixar a janela vencer nesse vão faria o Discord abrir sem correção.
+A janela fecha depois de 30 segundos sem nenhuma conexão de controle nova, com teto de 120 segundos. Os 30 segundos vêm de cronometrar uma abertura de verdade, não de chute:
+
+```
+[ 2.6s] Discord novo no ar
+[10.0s] exterior  discord.com:443
+[12.2s] exterior  gateway.discord.gg:443
+[43.4s] exterior  latency.discord.media:443
+[73.6s] sessão aberta; o Discord volta a falar direto
+```
+
+A abertura do Discord não é uma rajada contínua: entre o gateway e a última consulta de região passaram 31 segundos. Com uma janela de 10 segundos ela fechava no meio, e metade da abertura saía pelo IP brasileiro.
+
+Três coisas seguram a janela aberta, porque cada uma delas já fez a correção se perder:
+
+- **Piscina vazia.** No logon o serviço sobe antes de ter validado o primeiro proxy. Vencer nesse vão faria o Discord abrir sem correção pela sessão inteira.
+- **Discord fechado.** A janela precisa estar aberta *antes* de ele voltar. O vigia olha de segundo em segundo e o Discord é mais rápido: medido, a primeira conexão chegou aos 2,4 s e o vigia só notou aos 2,6 s. Manter a janela aberta enquanto ele está fora elimina a corrida.
+- **Aperto de mão em voo.** Um upstream morto segura a conexão por dezenas de segundos. Se a janela vencesse nesse meio tempo, o resto da abertura sairia direto.
+
+O preço disso é que o gateway fica no proxy pelo tempo da janela — mais ou menos um minuto depois de abrir o Discord, as mensagens vêm devagar. Passado esse minuto, ele é derrubado e volta pelo caminho curto, e assim fica pelo resto da sessão.
 
 Ao fechar, o programa **derruba as conexões que ele mesmo abriu pelo exterior**. Não dá para mover uma conexão TCP viva de rota, então o jeito de tirar o gateway do proxy é fechá-lo: o Discord percebe, reconecta com `RESUME` — mesma sessão, mesma região — e agora pelo caminho curto. É exatamente o que acontece quando você desliga a VPN depois de abrir o Discord, que é a correção manual que este projeto automatiza.
 

@@ -53,8 +53,14 @@ async fn atender(
     let mut cancelar = None;
     let servidor = match rota {
         Rota::Exterior => {
-            sessao.registrar_controle(Instant::now());
-            match abrir_pelo_exterior(&pool, &host, porta).await {
+            // Enquanto o aperto de mão com o upstream não termina, a janela não
+            // pode vencer: um upstream morto segura esta chamada por dezenas de
+            // segundos, e o resto da abertura do Discord sairia direto.
+            sessao.entrar_controle(Instant::now());
+            let aberta = abrir_pelo_exterior(&pool, &host, porta).await;
+            sessao.sair_controle(Instant::now());
+
+            match aberta {
                 Ok(s) => {
                     log::linha(&format!("exterior  {host}:{porta}"));
                     cancelar = Some(aviso);

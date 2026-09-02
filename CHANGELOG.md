@@ -21,20 +21,30 @@ gratuito derrubava o websocket, o Discord reconectava do zero, e a reconexão
 saía pelo mesmo caminho lento.
 
 Agora o desvio tem janela. Ele vale enquanto a sessão está nascendo — que é o
-único momento em que o IP é lido — e acaba quando a rajada de abertura passa:
-10 segundos sem conexão de controle nova, com teto de 90 segundos. Ao fechar, o
-programa derruba o que ele mesmo abriu pelo exterior, e o Discord reconecta
-direto com `RESUME`, mantendo a sessão e a região. É o mesmo efeito de desligar
-a VPN depois de abrir o Discord.
+único momento em que o IP é lido — e acaba 30 segundos depois da última conexão
+de controle, com teto de 120 segundos. Ao fechar, o programa derruba o que ele
+mesmo abriu pelo exterior, e o Discord reconecta direto com `RESUME`, mantendo a
+sessão e a região. É o mesmo efeito de desligar a VPN depois de abrir o Discord.
 
-A janela não começa a contar antes de a piscina ter proxy validado: no logon o
-serviço sobe primeiro, e deixar a janela vencer nesse vão faria o Discord abrir
-sem correção nenhuma.
+Os 30 segundos saíram de cronometrar a abertura, não de chute: o Discord falou
+com o `discord.com` aos 10 s, com o gateway aos 12 s e só voltou ao
+`latency.discord.media` aos 43 s. Uma janela mais curta fechava no meio dessa
+sequência.
+
+A janela também não vence quando não tem o que corrigir: piscina ainda sem
+proxy validado, Discord fechado, ou aperto de mão com o upstream ainda em voo.
+Cada um desses casos já fez a correção se perder em teste.
 
 **Reinício do Discord re-arma a correção.** O serviço compara os processos
 `Discord.exe` a cada segundo e reabre a janela quando nenhum dos anteriores
 sobrou — um Discord novo tem sessão nova, e a região dele ainda vai ser
-decidida. Renderizador que nasce ou morre no meio do uso não conta.
+decidida. Renderizador que nasce ou morre no meio do uso não conta. Fechar o
+Discord também reabre a janela, para ela já estar de pé quando ele voltar.
+
+**O que isso custa.** Enquanto a janela está aberta, o gateway passa pelo proxy
+— mais ou menos um minuto depois de abrir o Discord, as mensagens vêm devagar.
+Depois disso ele é derrubado, reconecta direto, e assim fica pelo resto da
+sessão.
 
 **`status.discord.com` parou de sair pelo exterior.** Casava com `discord.com` e
 ia para o proxy sem comprar nada: é a página pública de avisos, não participa da

@@ -18,14 +18,17 @@ use std::{
 };
 use tokio::sync::broadcast;
 
-/// Silêncio que declara a rajada de abertura encerrada. Curto o bastante para
-/// a correção não custar latência à toa, longo o bastante para não cortar um
-/// login no meio numa máquina lenta.
-const SILENCIO: Duration = Duration::from_secs(10);
+/// Silêncio que declara a rajada de abertura encerrada.
+///
+/// Trinta segundos vêm de medir a abertura de verdade nesta máquina: o Discord
+/// falou com o `discord.com` em 2,4 s, com o gateway em 4,6 s e só voltou ao
+/// `latency.discord.media` aos 18,8 s. Com dez segundos a janela fechava no
+/// meio dessa sequência e metade da abertura saía pelo IP brasileiro.
+const SILENCIO: Duration = Duration::from_secs(30);
 
 /// Teto absoluto da janela. O silêncio é o critério normal; o teto existe para
 /// a janela fechar mesmo se algo mantiver o tráfego de controle vivo.
-const TETO: Duration = Duration::from_secs(90);
+const TETO: Duration = Duration::from_secs(120);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Fase {
@@ -37,6 +40,7 @@ pub enum Fase {
 
 struct Estado {
     fase: Fase,
+    em_voo: u32,
     armada_em: Instant,
     ultima_controle: Option<Instant>,
     pids_discord: HashSet<u32>,
@@ -53,6 +57,7 @@ impl Sessao {
         Self {
             estado: Mutex::new(Estado {
                 fase: Fase::Abertura,
+                em_voo: 0,
                 armada_em: agora,
                 ultima_controle: None,
                 pids_discord: HashSet::new(),
@@ -72,10 +77,19 @@ impl Sessao {
         self.travar().fase
     }
 
-    /// Anota que passou uma conexão dos hosts que decidem a região. É o que
-    /// alimenta o silêncio.
-    pub fn registrar_controle(&self, agora: Instant) {
-        self.travar().ultima_controle = Some(agora);
+    /// Uma conexão de controle começou a ser aberta pelo exterior.
+    pub fn entrar_controle(&self, agora: Instant) {
+        let mut estado = self.travar();
+        estado.em_voo += 1;
+        estado.ultima_controle = Some(agora);
+    }
+
+    /// A conexão de controle terminou de ser estabelecida — com sucesso ou
+    /// não. É daqui que o silêncio começa a contar.
+    pub fn sair_controle(&self, agora: Instant) {
+        let mut estado = self.travar();
+        estado.em_voo = estado.em_voo.saturating_sub(1);
+        estado.ultima_controle = Some(agora);
     }
 
     /// Fecha a janela se o silêncio ou o teto já bateram. Devolve `true` na
@@ -86,11 +100,18 @@ impl Sessao {
             return false;
         }
 
-        // No logon o serviço sobe antes de ter validado o primeiro proxy. Se a
-        // janela vencesse nesse vão, o Discord abriria sem correção — e como a
-        // correção só existe na abertura, ela estaria perdida pela sessão
-        // inteira. Enquanto não há para onde desviar, a janela não conta.
-        if !ha_exterior {
+        // Duas situações em que a janela não pode nem começar a contar.
+        //
+        // Sem proxy validado não há para onde desviar: no logon o serviço sobe
+        // antes da piscina encher, e vencer nesse vão faria o Discord abrir sem
+        // correção pela sessão inteira.
+        //
+        // Sem Discord no ar não há sessão nascendo — e a janela precisa estar
+        // aberta *antes* de ele voltar. O vigia olha de segundo em segundo, e o
+        // Discord fala com o `discord.com` antes disso: medido, a primeira
+        // conexão chegou em 2,4 s e o vigia só notou aos 2,6 s. Manter a janela
+        // aberta enquanto ele está fechado elimina essa corrida.
+        if !ha_exterior || estado.pids_discord.is_empty() {
             estado.armada_em = agora;
             estado.ultima_controle = None;
             return false;
@@ -100,7 +121,8 @@ impl Sessao {
         // janela abriu — senão uma janela re-armada num Discord parado ficaria
         // aberta para sempre.
         let referencia = estado.ultima_controle.unwrap_or(estado.armada_em);
-        let calou = agora.saturating_duration_since(referencia) >= SILENCIO;
+        let calou =
+            estado.em_voo == 0 && agora.saturating_duration_since(referencia) >= SILENCIO;
         let estourou = agora.saturating_duration_since(estado.armada_em) >= TETO;
         if !calou && !estourou {
             return false;
@@ -122,11 +144,13 @@ impl Sessao {
         let atuais: HashSet<u32> = pids.iter().copied().collect();
         let mut estado = self.travar();
 
-        // Discord fechado não tem sessão para corrigir: gastar a janela agora
-        // só a deixaria vencida quando ele voltasse.
+        // Um Discord novo tem sessão nova. Discord que fechou também reabre a
+        // janela: a próxima abertura vai precisar dela desde a primeira
+        // conexão, e é `avaliar` que a segura aberta enquanto ele não volta.
+        let fechou = atuais.is_empty() && !estado.pids_discord.is_empty();
         let trocou = !atuais.is_empty() && atuais.is_disjoint(&estado.pids_discord);
         estado.pids_discord = atuais;
-        if trocou {
+        if trocou || fechou {
             Self::abrir(&mut estado, agora);
         }
         trocou
@@ -158,10 +182,70 @@ mod tests {
         Instant::now()
     }
 
+    /// Uma sessão com o Discord no ar, que é a única situação em que a janela
+    /// tem o que corrigir.
+    fn com_discord(t: Instant) -> Sessao {
+        let s = Sessao::nova(t);
+        s.observar_discord(&[100], t);
+        s
+    }
+
+    /// Uma conexão de controle que abriu e fechou o aperto de mão.
+    fn controle(s: &Sessao, t: Instant) {
+        s.entrar_controle(t);
+        s.sair_controle(t);
+    }
+
+    #[test]
+    fn a_janela_nao_vence_com_o_discord_fechado() {
+        let t = t0();
+        let s = Sessao::nova(t);
+        s.observar_discord(&[], t);
+
+        // Sem Discord no ar não há sessão nascendo. Deixar a janela vencer aqui
+        // faria a próxima abertura pegar a janela já fechada — e a corrida é
+        // real: o Discord fala com o discord.com antes de o vigia notar que ele
+        // subiu.
+        assert!(!s.avaliar(t + Duration::from_secs(3600), COM_EXTERIOR));
+        assert_eq!(s.fase(), Fase::Abertura);
+    }
+
+    #[test]
+    fn a_janela_reabre_quando_o_discord_fecha() {
+        let t = t0();
+        let s = com_discord(t);
+        controle(&s, t);
+        assert!(s.avaliar(t + SILENCIO, COM_EXTERIOR));
+        assert_eq!(s.fase(), Fase::Estabelecida);
+
+        // Fechou o Discord: a sessão dele morreu junto, e a próxima vai
+        // precisar da correção desde a primeira conexão.
+        s.observar_discord(&[], t + Duration::from_secs(60));
+        assert_eq!(s.fase(), Fase::Abertura);
+    }
+
+    #[test]
+    fn a_janela_espera_a_conexao_em_voo() {
+        let t = t0();
+        let s = com_discord(t);
+
+        // Um upstream morto segura o aperto de mão por até 30s. Se a janela
+        // vencesse nesse meio tempo, o resto da abertura do Discord sairia
+        // direto e a correção se perderia.
+        s.entrar_controle(t);
+        assert!(!s.avaliar(t + SILENCIO + Duration::from_secs(5), COM_EXTERIOR));
+        assert_eq!(s.fase(), Fase::Abertura);
+
+        let terminou = t + SILENCIO + Duration::from_secs(5);
+        s.sair_controle(terminou);
+        assert!(!s.avaliar(terminou, COM_EXTERIOR), "o silêncio recomeça agora");
+        assert!(s.avaliar(terminou + SILENCIO, COM_EXTERIOR));
+    }
+
     #[test]
     fn a_janela_espera_a_piscina_encher() {
         let t = t0();
-        let s = Sessao::nova(t);
+        let s = com_discord(t);
 
         // No logon o serviço sobe antes de ter proxy nenhum validado. Deixar a
         // janela vencer nesse vão faria o Discord abrir sem correção — e a
@@ -184,8 +268,8 @@ mod tests {
     #[test]
     fn silencio_fecha_a_janela() {
         let t = t0();
-        let s = Sessao::nova(t);
-        s.registrar_controle(t);
+        let s = com_discord(t);
+        controle(&s, t);
 
         assert!(s.avaliar(t + SILENCIO, COM_EXTERIOR), "o silêncio completo fecha");
         assert_eq!(s.fase(), Fase::Estabelecida);
@@ -196,8 +280,8 @@ mod tests {
         let t = t0();
         let s = Sessao::nova(t);
 
-        s.registrar_controle(t);
-        s.registrar_controle(t + Duration::from_secs(5));
+        controle(&s, t);
+        controle(&s, t + Duration::from_secs(5));
 
         assert!(!s.avaliar(t + Duration::from_secs(9), COM_EXTERIOR));
         assert_eq!(s.fase(), Fase::Abertura, "ainda faltam 6s de silêncio");
@@ -206,13 +290,13 @@ mod tests {
     #[test]
     fn o_teto_fecha_mesmo_com_trafego_continuo() {
         let t = t0();
-        let s = Sessao::nova(t);
+        let s = com_discord(t);
 
         // Uma conexão de controle a cada 5s, para sempre: o silêncio nunca
         // completa sozinho e só o teto encerra a janela.
         let mut passo = Duration::ZERO;
         while passo < TETO {
-            s.registrar_controle(t + passo);
+            controle(&s, t + passo);
             assert!(!s.avaliar(t + passo, COM_EXTERIOR), "não pode fechar antes do teto");
             passo += Duration::from_secs(5);
         }
@@ -224,8 +308,8 @@ mod tests {
     #[test]
     fn a_janela_so_fecha_uma_vez() {
         let t = t0();
-        let s = Sessao::nova(t);
-        s.registrar_controle(t);
+        let s = com_discord(t);
+        controle(&s, t);
 
         assert!(s.avaliar(t + SILENCIO, COM_EXTERIOR), "primeira passada fecha");
         assert!(
@@ -237,9 +321,9 @@ mod tests {
     #[test]
     fn fechar_avisa_quem_esta_no_exterior() {
         let t = t0();
-        let s = Sessao::nova(t);
+        let s = com_discord(t);
         let mut assinatura = s.assinar_cancelamento();
-        s.registrar_controle(t);
+        controle(&s, t);
 
         assert!(
             assinatura.try_recv().is_err(),
@@ -260,7 +344,7 @@ mod tests {
         let t = t0();
         let s = Sessao::nova(t);
         s.observar_discord(&[100, 101], t);
-        s.registrar_controle(t);
+        controle(&s, t);
         s.avaliar(t + SILENCIO, COM_EXTERIOR);
         assert_eq!(s.fase(), Fase::Estabelecida);
 
@@ -274,7 +358,7 @@ mod tests {
         let t = t0();
         let s = Sessao::nova(t);
         s.observar_discord(&[100, 101], t);
-        s.registrar_controle(t);
+        controle(&s, t);
         s.avaliar(t + SILENCIO, COM_EXTERIOR);
 
         // O 101 morreu e nasceu o 102, mas o processo principal continua lá:
@@ -288,34 +372,32 @@ mod tests {
         let t = t0();
         let s = Sessao::nova(t);
         s.observar_discord(&[], t);
-        s.registrar_controle(t);
-        s.avaliar(t + SILENCIO, COM_EXTERIOR);
-        assert_eq!(s.fase(), Fase::Estabelecida);
 
-        assert!(s.observar_discord(&[500], t + Duration::from_secs(30)));
+        assert!(
+            s.observar_discord(&[500], t + Duration::from_secs(30)),
+            "Discord aparecendo do nada é um Discord novo"
+        );
         assert_eq!(s.fase(), Fase::Abertura);
     }
 
     #[test]
-    fn discord_fechado_nao_rearma() {
+    fn discord_fechado_nao_conta_como_discord_novo() {
         let t = t0();
-        let s = Sessao::nova(t);
-        s.observar_discord(&[100], t);
-        s.registrar_controle(t);
+        let s = com_discord(t);
+        controle(&s, t);
         s.avaliar(t + SILENCIO, COM_EXTERIOR);
 
-        // Sem Discord no ar não há sessão para corrigir; re-armar agora só
-        // gastaria a janela antes de ele voltar.
+        // Fechar não é um Discord novo, então não é reinício — mas a janela
+        // reabre assim mesmo, para estar pronta quando ele voltar.
         assert!(!s.observar_discord(&[], t + Duration::from_secs(30)));
-        assert_eq!(s.fase(), Fase::Estabelecida);
+        assert_eq!(s.fase(), Fase::Abertura);
     }
 
     #[test]
     fn rearmar_reabre_a_contagem_do_silencio() {
         let t = t0();
-        let s = Sessao::nova(t);
-        s.observar_discord(&[100], t);
-        s.registrar_controle(t);
+        let s = com_discord(t);
+        controle(&s, t);
         s.avaliar(t + SILENCIO, COM_EXTERIOR);
 
         let depois = t + Duration::from_secs(60);
