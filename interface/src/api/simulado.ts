@@ -15,7 +15,7 @@ import type { Conexao, Estado, Servico, Status, Verificacao } from "./tipos";
 
 export type Cenario = "operacional" | "sem_proxies" | "parado";
 
-/** Tudo o que é do Discord: na abertura sai por fora, depois sai direto. */
+/** O que decide ou carrega a decisão de região: na abertura sai por fora, depois sai direto. */
 const HOSTS_DISCORD = [
   "discord.com",
   "gateway.discord.gg",
@@ -24,9 +24,13 @@ const HOSTS_DISCORD = [
   "latency.discord.media",
   "cdn.discordapp.com",
   "status.discord.com",
-  "c-gru18-6fa2a6cb.discord.media",
-  "c-gru17-851904d3.discord.media",
 ];
+/**
+ * O TCP dos servidores de voz e da transmissão. Não decide região nenhuma,
+ * então sai direto em qualquer fase — nem a abertura muda isso, a mesma regra
+ * de `src/routing.rs`.
+ */
+const HOSTS_VOZ = ["c-gru18-6fa2a6cb.discord.media", "c-gru17-851904d3.discord.media"];
 /**
  * O PAC nunca entrega este domínio ao proxy, então no serviço de verdade ele
  * nem aparece. Está aqui por um motivo só: `util/hosts.ts` não o traduz, e é
@@ -71,9 +75,15 @@ function estadoAtual(): Estado {
 
 /** Uma conexão nova, roteada como o serviço rotearia agora. */
 function novaConexao(atrasoSegundos = 0): Conexao {
-  const doDiscord = Math.random() < 0.9;
-  const host = doDiscord ? sorteio(HOSTS_DISCORD) : sorteio(HOSTS_SEMPRE_DIRETOS);
-  // Só a abertura sai por fora — tudo o que é do Discord, e só se houver saída.
+  const sorteado = Math.random();
+  const doDiscord = sorteado < 0.8;
+  const daVoz = !doDiscord && sorteado < 0.9;
+  const host = doDiscord
+    ? sorteio(HOSTS_DISCORD)
+    : daVoz
+      ? sorteio(HOSTS_VOZ)
+      : sorteio(HOSTS_SEMPRE_DIRETOS);
+  // Só a abertura sai por fora — e só quem decide região, nunca a voz.
   const porFora =
     doDiscord && atrasoSegundos >= ABERTURA_SEGUNDOS && estadoAtual() === "operacional";
   return {
