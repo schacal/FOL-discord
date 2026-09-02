@@ -35,8 +35,8 @@
 2. Abra o arquivo e siga o instalador
 3. Pronto — a janela abre sozinha e a correção já está ligada
 
-Depois disso ele se vira sozinho: a cada reinício do PC, a cada abertura do
-Discord, e nas reconexões durante o uso.
+Depois disso ele se vira sozinho: a cada reinício do PC e a cada vez que você
+abre ou reinicia o Discord.
 
 > **O Windows vai avisar, e o antivírus pode reclamar.** É esperado e está
 > explicado em [Antivírus e SmartScreen](#antivírus-e-smartscreen), com o
@@ -154,8 +154,11 @@ PATH antigo — abra uma janela nova, ou use o caminho completo:
 ## Segurança
 
 O tráfego é HTTPS em túnel: quem opera o proxy vê **que** você falou com o
-Discord — nunca o conteúdo, o token ou as mensagens. Nenhum certificado raiz é
-instalado, nenhum arquivo do Discord é modificado, nada roda como administrador.
+Discord — nunca o conteúdo, o token ou as mensagens. E vê só durante a abertura
+da sessão: passado esse minuto o desvio acaba, as suas mensagens deixam de
+passar por ele e nada mais do seu uso atravessa proxy nenhum. Nenhum certificado
+raiz é instalado, nenhum arquivo do Discord é modificado, nada roda como
+administrador.
 
 A [página de segurança](docs/seguranca.md) explica o que **fica** exposto,
 porque não é zero.
