@@ -30,12 +30,12 @@ O incômodo é ter que repetir isso toda vez — e o Discord reconecta sozinho d
 
 ## O que este programa faz
 
-A mesma coisa, sozinho: desvia as conexões que decidem a região, e desfaz o desvio quando a sessão já nasceu.
+A mesma coisa, sozinho: liga a "VPN" para o Discord abrir e desliga assim que a sessão nasceu. Enquanto a janela de abertura está aberta, **tudo o que é do Discord** sai por um IP estrangeiro; quando ela fecha, tudo volta a sair direto.
 
 ```mermaid
 flowchart LR
     D[Discord] -->|PAC do Windows| P[proxy local<br/>127.0.0.1:9250]
-    P -->|só na abertura:<br/>discord.com<br/>gateway.discord.gg<br/>latency.discord.media| E[proxy estrangeiro]
+    P -->|na abertura:<br/>tudo o que é do Discord| E[proxy estrangeiro]
     P -->|sessão aberta:<br/>tudo, inclusive mensagens| I[(internet)]
     D -.->|áudio, vídeo e tela<br/>UDP, nunca passa pelo proxy| I
     E --> I
@@ -58,10 +58,12 @@ Isso importa porque o `discord.com` e o `gateway.discord.gg` não são só endpo
 
 Por isso o desvio tem hora para acabar. O `src/sessao.rs` guarda em que fase a sessão está:
 
-- **Abertura** — os hosts de controle saem pelo exterior.
-- **Estabelecida** — tudo sai direto, sem exceção.
+- **Abertura** — tudo o que é do Discord sai pelo exterior. É a VPN ligada.
+- **Estabelecida** — tudo sai direto, sem exceção. É a VPN desligada.
 
-A janela fecha depois de 30 segundos sem nenhuma conexão de controle nova, com teto de 120 segundos. Os 30 segundos vêm de cronometrar uma abertura de verdade, não de chute:
+A janela fecha depois de 30 segundos sem nenhuma conexão nova **que decida a região** — `discord.com`, o gateway e `latency.discord.media` —, com teto de 120 segundos. As outras conexões do Discord saem pelo exterior enquanto ela está aberta, mas não a seguram: se a CDN também contasse, um Discord em uso — trocando de canal, carregando imagem — nunca deixaria o silêncio completar, e a janela só fecharia pelo teto, dois minutos depois, no meio do uso. O que é desviado e o que alimenta o relógio são duas listas diferentes de propósito.
+
+Os 30 segundos vêm de cronometrar uma abertura de verdade, não de chute:
 
 ```
 [ 2.6s] Discord novo no ar
@@ -77,13 +79,17 @@ Três coisas seguram a janela aberta, porque cada uma delas já fez a correção
 
 - **Piscina vazia.** No logon o serviço sobe antes de ter validado o primeiro proxy. Vencer nesse vão faria o Discord abrir sem correção pela sessão inteira.
 - **Discord fechado.** A janela precisa estar aberta *antes* de ele voltar. O vigia olha de segundo em segundo e o Discord é mais rápido: medido, a primeira conexão chegou aos 2,4 s e o vigia só notou aos 2,6 s. Manter a janela aberta enquanto ele está fora elimina a corrida.
-- **Aperto de mão em voo.** Um upstream morto segura a conexão por dezenas de segundos. Se a janela vencesse nesse meio tempo, o resto da abertura sairia direto.
+- **Aperto de mão em voo.** Um upstream morto segura uma conexão que decide a região por alguns segundos. Se a janela vencesse nesse meio tempo, o resto da abertura sairia direto. O aperto de mão com o proxy estrangeiro tem prazo de 5 segundos — TCP e SOCKS5 juntos — e uma segunda tentativa noutro proxy, então essa espera é curta por construção.
 
-O preço disso é que o gateway fica no proxy pelo tempo da janela — mais ou menos um minuto depois de abrir o Discord, as mensagens vêm devagar. Passado esse minuto, ele é derrubado e volta pelo caminho curto, e assim fica pelo resto da sessão.
+O preço disso é que tudo o que o Discord faz nesse primeiro minuto passa por um proxy público gratuito: as mensagens vêm devagar, as imagens demoram a carregar. Passado esse minuto, tudo é derrubado e volta pelo caminho curto, e assim fica pelo resto da sessão.
+
+Há um custo mais específico: **começar uma transmissão de tela nesse minuto pode falhar**. A sinalização dela viaja pelo websocket do gateway, que é derrubado quando a janela fecha, e a transmissão perde o fio no meio. É inerente ao modelo — desligar a VPN corta as conexões — e é por isso que a janela fecha o mais cedo que dá, e por isso o relógio só ouve as conexões que decidem a região.
 
 Ao fechar, o programa **derruba as conexões que ele mesmo abriu pelo exterior**. Não dá para mover uma conexão TCP viva de rota, então o jeito de tirar o gateway do proxy é fechá-lo: o Discord percebe, reconecta com `RESUME` — mesma sessão, mesma região — e agora pelo caminho curto. É exatamente o que acontece quando você desliga a VPN depois de abrir o Discord, que é a correção manual que este projeto automatiza.
 
-A janela reabre quando o Discord reinicia. O programa compara os processos `Discord.exe` a cada segundo e re-arma quando nenhum dos anteriores sobrou — o que distingue um reinício de verdade de um renderizador que nasceu ou morreu no meio do uso. O botão **Reiniciar Discord** da janela cai nesse mesmo caminho.
+A janela reabre quando o Discord reinicia. O programa identifica o Discord pelo processo principal — o único `Discord.exe` cujo pai não é outro `Discord.exe`; numa máquina comum são sete, um principal e seis filhos — e pela hora em que ele nasceu, porque o Windows reaproveita PIDs depressa o bastante para um Discord novo nascer com o número do antigo. Filho que nasce ou morre no meio do uso, como num Ctrl+R, não conta. Uma leitura vazia da lista de processos, que acontece sob carga, também não conta como "fechou": são precisas três seguidas. O botão **Reiniciar Discord** da janela cai nesse mesmo caminho.
+
+Uma última coisa que o programa faz é só olhar. Se um gateway novo abrir mais de um minuto depois de o anterior cair, com a sessão já aberta — o PC dormiu, a internet caiu —, ele escreve no log que a sessão pode ter renascido pelo IP brasileiro. Não reinicia nada por conta disso: o programa não consegue ler a região da sessão em curso, e a consulta a `latency.discord.media/rtc` depois da janela responde `brazil` sempre, inclusive quando a sessão está certa. Reiniciar o Discord por palpite seria pior do que o problema.
 
 ## As peças
 
@@ -99,15 +105,16 @@ Decide, por host, quem sai por fora — e só enquanto a sessão está na fase d
 
 | Sai pelo exterior, na abertura | Sai direto, sempre |
 | --- | --- |
-| `discord.com` | `cdn.discordapp.com` |
-| `gateway.discord.gg` | `media.discordapp.net` |
-| `latency.discord.media` | `status.discord.com` |
-| | servidores de voz (`c-gru*.discord.media`) |
-| | todo o resto da internet |
+| `discord.com` e tudo abaixo dele, inclusive `status.discord.com` | `media.discordapp.net` — o PAC nunca o entrega ao proxy |
+| `discord.gg`, com o gateway em todos os sabores regionais | todo o resto da internet |
+| `discordapp.com`, inclusive a CDN | |
+| `discord.media`, inclusive o TCP dos servidores de voz (`c-gru*`) | |
 
 Com a sessão já aberta, a coluna da esquerda deixa de existir: `decidir` devolve `Direta` para tudo.
 
-A separação é o que preserva o ping: a CDN é volume puro e a voz precisa de rota curta, então nenhuma das duas dá um passo a mais. O `status.discord.com` está na lista dos que nunca saem por fora porque casava com `discord.com` e ia parar no exterior sem comprar nada — é a página pública de avisos, não participa da decisão de região.
+A regra é por domínio do Discord, nunca "qualquer host", e isso não é detalhe: o SOCKS local aceita conexão de qualquer programa da máquina. Se ele devolvesse `Exterior` sem olhar o host, viraria um relay estrangeiro de uso geral durante a janela. Os testes `resto_da_internet_vai_direto` e `nao_confunde_sufixo` são a guarda disso.
+
+O mesmo módulo responde a uma segunda pergunta, separada da primeira: `decide_regiao` diz quais hosts alimentam o relógio que fecha a janela — `discord.com` (menos a página de avisos), o gateway e `latency.discord.media`. A voz por TCP e a CDN saem por fora, mas não seguram a janela, pelo mesmo motivo: o IP de origem dessas conexões não decide a região, e contá-las só manteria a janela aberta por mais tempo — a CDN, em particular, recebe conexão nova o tempo todo num Discord em uso.
 
 ### 3. Piscina de proxies (`src/pool.rs`)
 
@@ -119,7 +126,7 @@ Busca listas públicas de proxies SOCKS5 e valida cada candidato contra o própr
 
 O terceiro item é o que torna a validação real: não adianta o proxy estar vivo se ele não muda a decisão do Discord.
 
-A fila fica ordenada por latência. Quem falha em uso é rebaixado, e duas falhas eliminam. Quando a piscina fica com menos de três saudáveis, ela se reabastece sozinha. Você nunca configura nada.
+A fila fica ordenada por latência. Quem falha em uso é rebaixado, e duas falhas eliminam. Quando a piscina fica com menos de três saudáveis, ela se reabastece sozinha — na hora, sem esperar a passada de manutenção de cinco minutos, porque com todo o Discord saindo pelo exterior na abertura uma piscina vazia é uma janela aberta sem para onde desviar. Você nunca configura nada.
 
 ### 4. Instalação via PAC (`src/pac.rs`, `src/windows.rs`)
 

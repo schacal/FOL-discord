@@ -3,6 +3,69 @@
 Cada versão publicada em [Releases](https://github.com/schacal/FOL-discord/releases)
 e o que mudou nela. Datas no formato ano-mês-dia.
 
+## 0.2.9 — 2026-09-02
+
+**Na abertura, tudo o que é do Discord sai pelo exterior.** Até aqui só três
+hosts saíam por fora — `discord.com`, o gateway e `latency.discord.media` — e
+o resto do Discord ia direto desde o começo. Agora o programa faz o que a
+correção manual sempre fez: liga a "VPN" para o Discord abrir e desliga
+assim que a sessão nasceu. Enquanto a janela está aberta, API, gateway, CDN,
+anexos e o TCP dos servidores de voz saem por um IP estrangeiro; quando ela
+fecha, tudo isso é derrubado e o Discord reconecta direto, com a região já
+gravada na sessão.
+
+**A janela continua fechando cedo.** Só as conexões que decidem a região —
+as mesmas três de antes — contam para o silêncio de 30 segundos. Se a CDN
+também contasse, um Discord em uso nunca deixaria o silêncio completar e a
+janela só fecharia pelo teto, dois minutos depois, no meio do uso. O que é
+desviado e o que segura a janela são duas listas diferentes de propósito, e
+há um teste que falha se elas voltarem a se misturar. Os 30 segundos
+continuam sendo os da medição da 0.2.8.
+
+**O que isso custa.** Durante esse primeiro minuto, tudo o que o Discord
+carrega passa por um proxy público gratuito, e vem mais devagar. Começar uma
+transmissão de tela nesse minuto pode falhar: a sinalização dela viaja pelo
+gateway, que é derrubado quando a janela fecha. É inerente ao modelo —
+desligar a VPN corta as conexões — e por isso a janela fecha o mais cedo que
+dá. O `status.discord.com`, que a 0.2.8 tinha tirado do exterior, volta a
+sair por fora junto com o resto: com a VPN ligada não há exceção, e ele
+continua sem segurar a janela.
+
+**Proxy mudo não prende mais o Discord.** O aperto de mão com o proxy
+estrangeiro não tinha prazo: um que aceitasse a conexão e não respondesse
+prendia a requisição para sempre. Agora o TCP e o aperto de mão juntos têm
+5 segundos, com uma segunda tentativa noutro proxy — antes eram 15 segundos
+só para o TCP, duas vezes, e o resto sem limite. O log de um usuário tinha 31
+esperas estouradas. E se a janela fechar enquanto um aperto de mão ainda
+corre, a conexão é aberta direto em vez de nascer no exterior só para cair
+em seguida.
+
+**Piscina magra reabastece na hora.** Quando os proxies em uso caem abaixo
+de três, a manutenção acorda em vez de esperar a passada de cinco minutos.
+Com tudo saindo pelo exterior, um proxy ruim é rebaixado em duas conexões, e
+cinco minutos de piscina vazia seriam cinco minutos de janela aberta sem para
+onde desviar.
+
+**Reinício do Discord, detectado pelo processo certo.** O serviço passa a
+identificar o Discord pelo processo principal — o único `Discord.exe` cujo
+pai não é outro `Discord.exe` — e pela hora em que ele nasceu, porque o
+Windows reaproveita PIDs depressa. Uma leitura vazia da lista de processos,
+que acontece sob carga, não é mais lida como "o Discord reiniciou": são
+precisas três seguidas para aceitar que ele fechou. Fechar o Discord agora
+também aparece no log.
+
+**Suspeita registrada, sem reiniciar nada.** Se um gateway novo abrir mais de
+um minuto depois de o anterior cair, com a sessão já aberta — o PC dormiu, a
+internet caiu —, o serviço escreve no log que a sessão pode ter renascido
+pelo IP brasileiro. Só escreve: o programa não consegue ler a região da
+sessão em curso, e reiniciar o Discord por palpite seria pior do que o
+problema.
+
+**`--tudo-discord` saiu.** Era a rede de segurança para mandar todo o
+Discord pelo exterior, e nunca chegou a funcionar pelo caminho normal: o
+instalador subia o serviço sem repassar a opção. Agora é o comportamento
+padrão, sem opção nenhuma.
+
 ## 0.2.8 — 2026-09-02
 
 **As mensagens voltaram a sair direto.** O desvio pelo exterior não tinha hora
