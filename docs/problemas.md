@@ -35,7 +35,7 @@ Se continuar, veja por onde as conexões saíram:
 Get-Content "$env:LOCALAPPDATA\FolDiscord\fol.log" -Tail 30 -Encoding utf8
 ```
 
-**Se aparecem linhas `exterior discord.com:443`** — o encaminhamento está funcionando. Confira a ordem: a linha `sessão aberta; o Discord volta a falar direto` marca o fim do desvio e tem que vir **depois** de `exterior latency.discord.media:443`. Se veio antes, a abertura foi cortada no meio — abra uma issue com esse trecho do log.
+**Se aparecem linhas `exterior discord.com:443`** — o encaminhamento está funcionando. Confira a ordem: a linha `sessão aberta após N s; o Discord volta a falar direto` marca o fim do desvio e tem que vir **depois** de `exterior latency.discord.media:443`. Se veio antes, a abertura foi cortada no meio — abra uma issue com esse trecho do log.
 
 **Se aparece `a janela fechou durante o aperto de mão`** — não é erro: a janela venceu enquanto um proxy demorava a responder, e a conexão foi aberta direto em vez de nascer no exterior só para cair em seguida.
 

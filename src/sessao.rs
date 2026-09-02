@@ -8,10 +8,12 @@
 //! reconectar direto.
 //!
 //! O relógio que fecha a janela é alimentado só pelas conexões que decidem a
-//! região (`routing::decide_regiao`). Tudo o mais do Discord também sai pelo
-//! exterior enquanto ela está aberta, mas não a segura: senão um Discord em
-//! uso — trocando de canal, carregando imagem — nunca deixaria o silêncio
-//! completar, e a janela só fecharia pelo teto, no meio do uso.
+//! região (`routing::decide_regiao`). A API e a CDN também saem pelo exterior
+//! enquanto ela está aberta, mas não a seguram: senão um Discord em uso —
+//! trocando de canal, carregando imagem — nunca deixaria o silêncio
+//! completar, e a janela só fecharia pelo teto, no meio do uso. O TCP dos
+//! servidores de voz vai além: nem sai pelo exterior, porque não decide
+//! região nenhuma (`routing::decidir`).
 
 use std::{
     sync::Mutex,
