@@ -12,6 +12,7 @@
 //! não existe instalador que a coloque no lugar.
 
 use crate::inicializacao;
+use crate::plataforma;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -20,14 +21,11 @@ use std::{
     sync::{Mutex, OnceLock},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use winreg::{enums::*, RegKey};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
 const PORTA_PAC: u16 = 9251;
-const IMAGEM_DO_SERVICO: &str = "fol-discord.exe";
-const CHAVE_INTERNET: &str = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
 const URL_ULTIMA_RELEASE: &str = "https://api.github.com/repos/schacal/FOL-discord/releases/latest";
 const INTERVALO_ATUALIZACAO: Duration = Duration::from_secs(6 * 60 * 60);
 /// Folga mínima entre duas consultas disparadas por mostrar a janela.
@@ -91,12 +89,11 @@ pub struct Verificacao {
 }
 
 fn pasta_dados() -> PathBuf {
-    let base = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".into());
-    PathBuf::from(base).join("FolDiscord")
+    plataforma::pasta_dados()
 }
 
 pub fn executavel_instalado() -> PathBuf {
-    pasta_dados().join("fol-discord.exe")
+    plataforma::executavel_instalado()
 }
 
 fn caminho_log() -> PathBuf {
@@ -125,10 +122,11 @@ fn url_pac() -> String {
 /// Não abrimos uma conexão SOCKS só para ver se o processo existe: o serviço
 /// registra esse teste como `early eof`, poluindo o histórico da atividade.
 fn servico_rodando() -> bool {
-    crate::processos::esta_rodando(IMAGEM_DO_SERVICO)
+    crate::processos::esta_rodando(plataforma::NOME_SERVICO)
 }
 
 fn comando_oculto(programa: impl AsRef<std::ffi::OsStr>) -> Command {
+    #[allow(unused_mut)]
     let mut comando = Command::new(programa);
     #[cfg(windows)]
     {
@@ -142,7 +140,7 @@ fn encerrar_copias_antigas() {
     // Esta janela chama-se `fol-discord-janela.exe`, então não há risco de
     // encerrar a si própria — ao contrário do serviço, que compartilha o nome
     // de imagem com as cópias que precisa substituir.
-    crate::processos::encerrar_por_nome(IMAGEM_DO_SERVICO);
+    crate::processos::encerrar_por_nome(plataforma::NOME_SERVICO);
 }
 
 /// O instalador grava o serviço como `fol-discord.exe` ao lado desta janela.
@@ -151,7 +149,7 @@ fn origem_do_servico() -> Option<PathBuf> {
     let ao_lado = std::env::current_exe()
         .ok()?
         .parent()?
-        .join(IMAGEM_DO_SERVICO);
+        .join(plataforma::NOME_SERVICO);
     ao_lado.is_file().then_some(ao_lado)
 }
 
@@ -183,7 +181,8 @@ fn gravar_servico(destino: &Path) -> Result<(), String> {
     if destino.exists() {
         fs::remove_file(destino).map_err(|e| format!("não consegui substituir o serviço antigo: {e}"))?;
     }
-    fs::rename(&novo, destino).map_err(|e| format!("não consegui instalar o serviço: {e}"))
+    fs::rename(&novo, destino).map_err(|e| format!("não consegui instalar o serviço: {e}"))?;
+    plataforma::preparar_executavel(destino)
 }
 
 fn mesmos_bytes(a: &Path, b: &Path) -> bool {
@@ -254,11 +253,7 @@ pub fn garantir_servico(reiniciar_discord: bool, criar_run_legado: bool) -> Resu
 }
 
 fn pac_ativo() -> bool {
-    hkcu()
-        .open_subkey(CHAVE_INTERNET)
-        .and_then(|chave| chave.get_value::<String, _>("AutoConfigURL"))
-        .map(|url| url.eq_ignore_ascii_case(&url_pac()))
-        .unwrap_or(false)
+    plataforma::pac_ativo(&url_pac())
 }
 
 fn dados_da_piscina() -> (u32, Option<ProxyEmUso>) {
@@ -565,34 +560,18 @@ pub fn conexoes() -> Vec<Conexao> {
     interpretar_conexoes(&log, hora_utc)
 }
 
-fn hkcu() -> RegKey {
-    RegKey::predef(HKEY_CURRENT_USER)
-}
-
 pub fn pausar() -> Result<(), String> {
     if !executavel_instalado().exists() {
         return Err("o serviço ainda não está instalado".into());
     }
-    let (chave, _) = hkcu()
-        .create_subkey(CHAVE_INTERNET)
-        .map_err(|e| format!("não consegui abrir as configurações de proxy: {e}"))?;
-    match chave.delete_value("AutoConfigURL") {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("não consegui pausar a correção: {e}")),
-    }
+    plataforma::alterar_pac(&executavel_instalado(), &url_pac(), false)
 }
 
 pub fn retomar() -> Result<(), String> {
     if !executavel_instalado().exists() {
         return Err("o serviço ainda não está instalado".into());
     }
-    let (chave, _) = hkcu()
-        .create_subkey(CHAVE_INTERNET)
-        .map_err(|e| format!("não consegui abrir as configurações de proxy: {e}"))?;
-    chave
-        .set_value("AutoConfigURL", &url_pac())
-        .map_err(|e| format!("não consegui retomar a correção: {e}"))
+    plataforma::alterar_pac(&executavel_instalado(), &url_pac(), true)
 }
 
 pub fn definir_autostart(ligado: bool) -> Result<(), String> {

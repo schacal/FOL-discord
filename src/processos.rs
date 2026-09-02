@@ -104,22 +104,96 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 mod imp {
-    pub fn pids_por_nome(_nome: &str) -> Vec<u32> {
-        Vec::new()
+    use std::{
+        fs,
+        path::Path,
+        time::{Duration, Instant},
+    };
+
+    const ESPERA: Duration = Duration::from_secs(5);
+
+    fn uid(caminho: &Path) -> Option<u32> {
+        fs::read_to_string(caminho.join("status"))
+            .ok()?
+            .lines()
+            .find_map(|linha| linha.strip_prefix("Uid:"))?
+            .split_whitespace()
+            .next()?
+            .parse()
+            .ok()
     }
 
-    pub fn encerrar_todos(_pids: &[u32]) {}
+    fn nome(caminho: &Path) -> Option<String> {
+        fs::read_to_string(caminho.join("comm"))
+            .ok()
+            .map(|valor| valor.trim().to_string())
+            .filter(|valor| !valor.is_empty())
+            .or_else(|| {
+                fs::read_link(caminho.join("exe"))
+                    .ok()?
+                    .file_name()
+                    .map(|valor| valor.to_string_lossy().into_owned())
+            })
+    }
+
+    pub fn pids_por_nome(procurado: &str) -> Vec<u32> {
+        let meu_uid = uid(Path::new("/proc/self"));
+        let Ok(entradas) = fs::read_dir("/proc") else {
+            return Vec::new();
+        };
+        entradas
+            .flatten()
+            .filter_map(|entrada| {
+                let pid: u32 = entrada.file_name().to_str()?.parse().ok()?;
+                let caminho = entrada.path();
+                if meu_uid.is_some() && uid(&caminho) != meu_uid {
+                    return None;
+                }
+                (nome(&caminho).as_deref() == Some(procurado)).then_some(pid)
+            })
+            .collect()
+    }
+
+    fn existe(pid: u32) -> bool {
+        Path::new("/proc").join(pid.to_string()).exists()
+    }
+
+    pub fn encerrar_todos(pids: &[u32]) {
+        for &pid in pids {
+            if pid == std::process::id() {
+                continue;
+            }
+            // SAFETY: `kill` não retém ponteiros; o PID foi descoberto em /proc
+            // e o sinal é uma constante válida do libc.
+            unsafe {
+                libc::kill(pid as libc::pid_t, libc::SIGTERM);
+            }
+        }
+
+        let limite = Instant::now() + ESPERA;
+        while Instant::now() < limite && pids.iter().any(|pid| existe(*pid)) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        for &pid in pids.iter().filter(|pid| existe(**pid)) {
+            unsafe {
+                libc::kill(pid as libc::pid_t, libc::SIGKILL);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn encontra_o_proprio_processo_no_proc() {
+            let nome = fs::read_to_string("/proc/self/comm").unwrap();
+            assert!(pids_por_nome(nome.trim()).contains(&std::process::id()));
+        }
+    }
 }
 
 pub use imp::{encerrar_todos, pids_por_nome};
-
-/// Atalho para o caso mais comum: encerrar tudo que atende por um nome.
-pub fn encerrar_por_nome(nome: &str) {
-    encerrar_todos(&pids_por_nome(nome));
-}
-
-pub fn esta_rodando(nome: &str) -> bool {
-    !pids_por_nome(nome).is_empty()
-}

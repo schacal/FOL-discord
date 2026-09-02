@@ -11,13 +11,13 @@
 mod discord;
 mod pac;
 mod pool;
+mod plataforma;
 mod processos;
 mod routing;
 mod sessao;
 mod socks;
-mod windows;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use routing::Modo;
 use std::{ffi::OsStr, path::PathBuf, process::Command, time::Duration};
 
@@ -55,8 +55,7 @@ fn url_pac() -> String {
 }
 
 pub fn pasta_dados() -> PathBuf {
-    let base = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".into());
-    PathBuf::from(base).join("FolDiscord")
+    plataforma::pasta_dados()
 }
 
 pub fn caminho_log() -> PathBuf {
@@ -101,13 +100,14 @@ fn registrar_checagem_em(caminho: &std::path::Path, instante: u128) {
 }
 
 fn caminho_instalado() -> PathBuf {
-    pasta_dados().join("fol-discord.exe")
+    plataforma::caminho_instalado()
 }
 
 /// Todo processo auxiliar nasce sem console. O núcleo é executado tanto pelo
 /// PowerShell quanto pela janela; neste último caso, ferramentas como
 /// `taskkill` criariam uma caixa preta curta se não receberem esta flag.
 fn comando_oculto(programa: impl AsRef<OsStr>) -> Command {
+    #[allow(unused_mut)]
     let mut comando = Command::new(programa);
     #[cfg(windows)]
     {
@@ -136,6 +136,9 @@ fn main() -> Result<()> {
         "instalar" => instalar(opcoes_instalar(&args)),
         "desinstalar" => desinstalar(manter_arquivos(&args)),
         "status" => status(),
+        "pausar" => pausar(),
+        "retomar" => retomar(),
+        "abrir-discord" => abrir_discord(&args),
         "reiniciar-discord" => reiniciar_discord(),
         "rodar" => rodar(modo),
         _ => {
@@ -149,15 +152,18 @@ fn ajuda() {
     println!(
         "\nfol-discord {}\n\n\
          Uso:\n  \
-         fol-discord instalar      liga a correção, reinicia o Discord e sobe com o Windows\n  \
+         fol-discord instalar      liga a correção, reinicia o Discord e sobe com o sistema\n  \
          fol-discord desinstalar   remove tudo, sem deixar rastro\n  \
          fol-discord status        mostra o estado atual\n  \
+         fol-discord pausar        pausa a correção sem parar o serviço\n  \
+         fol-discord retomar       religa a correção\n  \
+         fol-discord abrir-discord abre o Discord pelo launcher gerenciado\n  \
          fol-discord reiniciar-discord fecha e abre só o Discord\n  \
          fol-discord rodar         roda em primeiro plano (para depurar)\n\n\
          Opções:\n  \
          --sem-reiniciar           não mexe no Discord aberto; a correção vale na\n                            \
          próxima vez que você abrir\n  \
-         --sem-autostart           não cria a entrada Run legada (uso do setup)\n  \
+         --sem-autostart           não cria a entrada automática (uso do setup)\n  \
          --manter-arquivos         limpa a configuração sem apagar a pasta instalada\n  \
          --tudo-discord            manda todo domínio do Discord pro exterior\n                            \
          (use só se a correção padrão não bastar)\n",
@@ -168,20 +174,24 @@ fn ajuda() {
 fn instalar(opcoes: OpcoesInstalar) -> Result<()> {
     let destino = caminho_instalado();
     std::fs::create_dir_all(pasta_dados()).context("criando a pasta de dados")?;
+    if let Some(pasta) = destino.parent() {
+        std::fs::create_dir_all(pasta).context("criando a pasta do executável")?;
+    }
 
     let atual = std::env::current_exe()?;
     if atual != destino {
         // Se já havia uma cópia rodando, ela precisa sair antes de ser trocada.
         encerrar_outras_instancias();
         std::fs::copy(&atual, &destino).context("copiando o executável")?;
+        plataforma::preparar_executavel(&destino).context("preparando o executável")?;
     }
 
     if opcoes.criar_run_legado {
-        windows::ativar_autostart(&format!("\"{}\" rodar", destino.display()))
+        plataforma::ativar_autostart(&destino)
             .context("registrando o autostart")?;
     }
-    windows::ativar_pac(&url_pac()).context("ligando o proxy automático")?;
-    let _ = windows::adicionar_ao_path(&pasta_dados().display().to_string());
+    plataforma::ativar_pac(&url_pac(), &destino).context("ligando o proxy automático")?;
+    let _ = plataforma::registrar_cli(&destino);
 
     // O marcador é de quem está subindo agora, não da instalação anterior — e
     // a mesma regra vale para a hora da última checagem: mostrar "há 3 d" numa
@@ -250,21 +260,21 @@ fn instalar(opcoes: OpcoesInstalar) -> Result<()> {
 }
 
 fn desinstalar(manter_arquivos: bool) -> Result<()> {
-    windows::validar_autostart_do_fol(&caminho_instalado())?;
-    windows::desativar_pac().context("devolvendo o proxy automático")?;
-    windows::desativar_autostart(&caminho_instalado()).context("removendo o autostart")?;
-    let _ = windows::remover_do_path(&pasta_dados().display().to_string());
+    plataforma::validar_autostart_do_fol(&caminho_instalado())?;
+    plataforma::desativar_pac().context("devolvendo o proxy automático")?;
+    plataforma::desativar_autostart(&caminho_instalado()).context("removendo o autostart")?;
+    let _ = plataforma::remover_cli(&caminho_instalado());
     encerrar_outras_instancias();
 
     // Fecha o Discord sem reabrir: reabrir agora, com o proxy já desligado, é
     // exatamente o que o usuário quer — mas deixamos a escolha com ele.
     let estava_aberto = discord::encerrar_se_aberto();
     if !manter_arquivos {
-        let _ = std::fs::remove_dir_all(pasta_dados());
+        plataforma::remover_arquivos_instalados();
     }
 
     println!(
-        "{} O proxy automático do Windows voltou ao que era antes.",
+        "{} A configuração automática de proxy voltou ao que era antes.",
         if manter_arquivos {
             "Configuração removida; os arquivos foram preservados para o setup."
         } else {
@@ -282,12 +292,12 @@ fn desinstalar(manter_arquivos: bool) -> Result<()> {
 fn status() -> Result<()> {
     println!("\nfol-discord {}\n", env!("CARGO_PKG_VERSION"));
     println!("  instalado  : {}", sim_nao(caminho_instalado().exists()));
-    println!("  autostart  : {}", sim_nao(windows::autostart_ativo()));
-    println!("  PAC ligado : {}", sim_nao(windows::pac_ativo(&url_pac())));
+    println!("  autostart  : {}", sim_nao(plataforma::autostart_ativo()));
+    println!("  PAC ligado : {}", sim_nao(plataforma::pac_ativo(&url_pac())));
     println!("  rodando    : {}", sim_nao(porta_ocupada(PORTA_SOCKS)));
     println!(
         "  no PATH    : {}",
-        sim_nao(windows::path_ativo(&pasta_dados().display().to_string()))
+        sim_nao(plataforma::cli_registrada(&caminho_instalado()))
     );
     println!("  proxies    : {}", sim_nao(piscina_pronta()));
     println!("  log        : {}", caminho_log().display());
@@ -305,11 +315,57 @@ fn reiniciar_discord() -> Result<()> {
     Ok(())
 }
 
+fn pausar() -> Result<()> {
+    plataforma::desativar_pac().context("pausando a correção")
+}
+
+fn retomar() -> Result<()> {
+    if !caminho_instalado().is_file() {
+        bail!(
+            "o serviço instalado não foi encontrado em {}",
+            caminho_instalado().display()
+        );
+    }
+    plataforma::ativar_pac(&url_pac(), &caminho_instalado()).context("retomando a correção")
+}
+
+fn abrir_discord(args: &[String]) -> Result<()> {
+    if !porta_ocupada(PORTA_SOCKS) {
+        let servico = caminho_instalado();
+        if !servico.is_file() {
+            bail!("o serviço instalado não foi encontrado em {}", servico.display());
+        }
+        comando_oculto(&servico)
+            .arg("rodar")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .context("subindo o serviço antes do Discord")?;
+
+        for _ in 0..60 {
+            if porta_ocupada(PORTA_SOCKS) && piscina_pronta() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+    }
+
+    let extras = args
+        .iter()
+        .position(|arg| arg == "abrir-discord")
+        .map(|indice| &args[indice + 1..])
+        .unwrap_or_default();
+    if !discord::abrir(extras)? {
+        bail!("não encontrei uma instalação nativa ou Flatpak do Discord");
+    }
+    Ok(())
+}
+
 /// Encerra cópias antigas do serviço — e só elas. O filtro por PID existe
 /// porque o instalador tem o mesmo nome de imagem e mataria a si próprio.
 fn encerrar_outras_instancias() {
     let eu = std::process::id();
-    let antigas: Vec<u32> = processos::pids_por_nome("fol-discord.exe")
+    let antigas: Vec<u32> = processos::pids_por_nome(plataforma::NOME_SERVICO)
         .into_iter()
         .filter(|pid| *pid != eu)
         .collect();

@@ -19,6 +19,7 @@ use tauri::{
 
 mod servico;
 mod inicializacao;
+mod plataforma;
 mod processos;
 
 const BANDEJA: &str = "principal";

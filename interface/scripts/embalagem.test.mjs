@@ -80,7 +80,7 @@ test("as sondas da janela não iniciam processo nenhum", async () => {
   const ponte = await readFile(ponteNativa, "utf8");
   assert.match(
     ponte,
-    /fn servico_rodando\(\) -> bool \{\s*crate::processos::esta_rodando\(IMAGEM_DO_SERVICO\)\s*\}/s,
+    /fn servico_rodando\(\) -> bool \{\s*crate::processos::esta_rodando\(plataforma::NOME_SERVICO\)\s*\}/s,
     "a sonda de estado voltou a depender de um utilitário externo",
   );
   for (const utilitario of ["tasklist", "taskkill"]) {

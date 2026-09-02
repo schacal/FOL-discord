@@ -106,7 +106,7 @@ export function Acoes({
           className="flex h-9 cursor-pointer items-center gap-3 rounded-lg border border-borda bg-superficie pr-2 pl-3.5 shadow-cartao transition-colors duration-150 hover:bg-[#F5F3F0]"
           title={
             autostart
-              ? "A correção sobe junto com o Windows"
+              ? "A correção sobe junto com o sistema"
               : "A correção só vale depois que você abrir o programa"
           }
         >

@@ -144,6 +144,7 @@ name = "fol-discord"
 version = "0.2.8"
 dependencies = [
  "anyhow",
+ "libc",
  "reqwest",
  "serde",
  "serde_json",
