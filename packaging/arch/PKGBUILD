@@ -1,0 +1,42 @@
+pkgname=fol-discord
+pkgver=0.2.8
+pkgrel=1
+pkgdesc="Corrige a transmissão de tela e a câmera do Discord no Brasil"
+arch=('x86_64')
+url="https://github.com/schacal/FOL-discord"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'libayatana-appindicator' 'polkit')
+makedepends=('cargo' 'git' 'nodejs' 'npm')
+options=('!debug')
+source=("$pkgname-$pkgver::git+$url.git#tag=v$pkgver")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  npm ci --prefix interface
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  local rust_target="x86_64-unknown-linux-gnu"
+
+  cargo build --release --locked --target "$rust_target"
+  FOL_DISCORD_PREBUILT_CORE=1 \
+    FOL_DISCORD_CORE_PATH="$srcdir/$pkgname-$pkgver/target/$rust_target/release/fol-discord" \
+    npm --prefix interface run tauri -- build --no-bundle
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  local rust_target="x86_64-unknown-linux-gnu"
+
+  install -Dm755 "target/$rust_target/release/fol-discord" \
+    "$pkgdir/usr/bin/fol-discord"
+  install -Dm755 "interface/src-tauri/target/release/fol-discord-janela" \
+    "$pkgdir/usr/bin/fol-discord-janela"
+  install -Dm644 packaging/linux/fol-discord.desktop \
+    "$pkgdir/usr/share/applications/fol-discord.desktop"
+  install -Dm644 interface/src-tauri/icones/128x128.png \
+    "$pkgdir/usr/share/icons/hicolor/128x128/apps/fol-discord.png"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

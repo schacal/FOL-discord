@@ -139,6 +139,8 @@ fn main() -> Result<()> {
         "pausar" => pausar(),
         "retomar" => retomar(),
         "abrir-discord" => abrir_discord(&args),
+        #[cfg(target_os = "linux")]
+        "remover-pacote" => remover_pacote(),
         "reiniciar-discord" => reiniciar_discord(),
         "rodar" => rodar(modo),
         _ => {
@@ -359,6 +361,12 @@ fn abrir_discord(args: &[String]) -> Result<()> {
         bail!("não encontrei uma instalação nativa ou Flatpak do Discord");
     }
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn remover_pacote() -> Result<()> {
+    plataforma::remover_pacote_sistema().context("removendo o pacote do sistema")?;
+    desinstalar(false)
 }
 
 /// Encerra cópias antigas do serviço — e só elas. O filtro por PID existe

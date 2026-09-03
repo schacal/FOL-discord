@@ -247,7 +247,7 @@ export default function App() {
       setAviso({
         tom: "ok",
         titulo: "Download aberto",
-        frase: "Quando terminar, abra o instalador para concluir a atualização.",
+        frase: "Quando terminar, abra o arquivo baixado para concluir a atualização.",
       });
     } catch {
       setAviso({
