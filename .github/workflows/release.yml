@@ -151,6 +151,7 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           FOL_DISCORD_PREBUILT_CORE: '1'
+          FOL_DISCORD_CORE_PATH: ${{ github.workspace }}\target\release\fol-discord.exe
         run: npm --prefix interface run tauri -- build --bundles nsis --config src-tauri/tauri.signing.conf.json
 
       - name: Testes da embalagem
@@ -200,7 +201,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fol-discord-cli
-          path: target/release/fol-discord.exe
+          path: |
+            target/release/fol-discord.exe
+            target/x86_64-pc-windows-msvc/release/fol-discord.exe
 
       # A release publica o instalador, e só ele: ele já traz o serviço dentro,
       # então publicar o `fol-discord.exe` solto ao lado só daria a quem vai

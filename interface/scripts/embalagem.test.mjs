@@ -483,6 +483,14 @@ test("a release pública assina pelo empacotador e verifica os artefatos", async
   const blocoBuildAssinado = workflow.slice(buildAssinado, testesEmbalagem);
   assert.match(blocoBuildAssinado, /--config src-tauri\/tauri\.signing\.conf\.json/);
   assert.match(blocoBuildAssinado, /FOL_DISCORD_PREBUILT_CORE:\s*['"]?1/);
+  assert.match(
+    blocoBuildAssinado,
+    /FOL_DISCORD_CORE_PATH:[^\n]*target\\release\\fol-discord\.exe/,
+  );
+  assert.match(
+    workflow,
+    /target\/x86_64-pc-windows-msvc\/release\/fol-discord\.exe/,
+  );
 
   const blocoVerificacao = workflow.slice(verificarAssinaturas, publicarSetup);
   assert.ok(blocoVerificacao.includes("target\\release\\fol-discord.exe"));
