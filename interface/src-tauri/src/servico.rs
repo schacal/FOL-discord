@@ -557,10 +557,8 @@ fn interpretar_conexoes(log: &str, hora_utc: u64) -> Vec<Conexao> {
             let texto = linha.trim();
             let (rota, destino) = if let Some(destino) = texto.strip_prefix("exterior  ") {
                 ("exterior", destino)
-            } else if let Some(destino) = texto.strip_prefix("direto    ") {
-                ("direto", destino)
             } else {
-                return None;
+                ("direto", texto.strip_prefix("direto    ")?)
             };
             let (host, porta) = destino.rsplit_once(':')?;
             let porta = porta.parse().ok()?;
