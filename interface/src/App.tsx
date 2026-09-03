@@ -124,7 +124,7 @@ export default function App() {
   // bandeja não há o que envelhecer: o relógio para, e volta acertado.
   useEffect(() => {
     const acertar = () => setAgora(Date.now());
-    let id = 0;
+    let id: ReturnType<typeof setInterval> | undefined = undefined;
     const reger = () => {
       clearInterval(id);
       if (document.hidden) return;
@@ -247,7 +247,7 @@ export default function App() {
       setAviso({
         tom: "ok",
         titulo: "Download aberto",
-        frase: "Quando terminar, abra o instalador para concluir a atualização.",
+        frase: "Quando terminar, abra o arquivo baixado para concluir a atualização.",
       });
     } catch {
       setAviso({

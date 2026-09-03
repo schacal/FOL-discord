@@ -1,0 +1,19 @@
+pkgbase = fol-discord
+	pkgdesc = Corrige a transmissão de tela e a câmera do Discord no Brasil
+	pkgver = 0.2.8
+	pkgrel = 1
+	url = https://github.com/schacal/FOL-discord
+	arch = x86_64
+	license = MIT
+	makedepends = cargo
+	makedepends = git
+	makedepends = nodejs
+	makedepends = npm
+	depends = webkit2gtk-4.1
+	depends = libayatana-appindicator
+	depends = polkit
+	options = !debug
+	source = fol-discord-0.2.8::git+https://github.com/schacal/FOL-discord.git#tag=v0.2.8
+	sha256sums = SKIP
+
+pkgname = fol-discord

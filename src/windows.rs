@@ -4,7 +4,7 @@
 use anyhow::{bail, Context, Result};
 use std::{
     ffi::OsStr,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 use winreg::{enums::*, RegKey, RegValue};
@@ -17,6 +17,25 @@ const CHAVE_RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const NOME_RUN: &str = "FolDiscord";
 const BACKUP: &str = "AutoConfigURL_backup_FolDiscord";
 const TAREFA_BANDEJA: &str = "FolDiscord.Bandeja";
+
+pub const NOME_SERVICO: &str = "fol-discord.exe";
+
+pub fn pasta_dados() -> PathBuf {
+    let base = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".into());
+    PathBuf::from(base).join("FolDiscord")
+}
+
+pub fn caminho_instalado() -> PathBuf {
+    pasta_dados().join(NOME_SERVICO)
+}
+
+pub fn preparar_executavel(_caminho: &Path) -> Result<()> {
+    Ok(())
+}
+
+pub fn remover_arquivos_instalados() {
+    let _ = std::fs::remove_dir_all(pasta_dados());
+}
 
 fn hkcu() -> RegKey {
     RegKey::predef(HKEY_CURRENT_USER)
@@ -34,7 +53,7 @@ fn comando_oculto(programa: impl AsRef<OsStr>) -> Command {
 
 /// Aponta o proxy automático do Windows para o nosso PAC, guardando o valor
 /// anterior para conseguir devolver na desinstalação.
-pub fn ativar_pac(url: &str) -> Result<()> {
+pub fn ativar_pac(url: &str, _servico: &Path) -> Result<()> {
     let (k, _) = hkcu()
         .create_subkey(CHAVE_INTERNET)
         .context("abrindo Internet Settings")?;
@@ -71,9 +90,9 @@ pub fn pac_ativo(url: &str) -> bool {
         .unwrap_or(false)
 }
 
-pub fn ativar_autostart(comando: &str) -> Result<()> {
+pub fn ativar_autostart(servico: &Path) -> Result<()> {
     let (k, _) = hkcu().create_subkey(CHAVE_RUN)?;
-    k.set_value(NOME_RUN, &comando.to_string())?;
+    k.set_value(NOME_RUN, &format!("\"{}\" rodar", servico.display()))?;
     Ok(())
 }
 
@@ -176,7 +195,9 @@ fn texto_para_utf16(s: &str) -> Vec<u8> {
 }
 
 pub fn adicionar_ao_path(dir: &str) -> Result<()> {
-    let (k, _) = hkcu().create_subkey(CHAVE_ENV).context("abrindo Environment")?;
+    let (k, _) = hkcu()
+        .create_subkey(CHAVE_ENV)
+        .context("abrindo Environment")?;
 
     let (atual, vtype) = match k.get_raw_value("Path") {
         Ok(v) => (utf16_para_texto(&v), v.vtype),
@@ -237,6 +258,21 @@ pub fn path_ativo(dir: &str) -> bool {
         .and_then(|k| k.get_raw_value("Path"))
         .map(|v| esta_no_path(&utf16_para_texto(&v), dir))
         .unwrap_or(false)
+}
+
+pub fn registrar_cli(servico: &Path) -> Result<()> {
+    let pasta = servico.parent().unwrap_or(servico);
+    adicionar_ao_path(&pasta.display().to_string())
+}
+
+pub fn remover_cli(servico: &Path) -> Result<()> {
+    let pasta = servico.parent().unwrap_or(servico);
+    remover_do_path(&pasta.display().to_string())
+}
+
+pub fn cli_registrada(servico: &Path) -> bool {
+    let pasta = servico.parent().unwrap_or(servico);
+    path_ativo(&pasta.display().to_string())
 }
 
 fn esta_no_path(path: &str, dir: &str) -> bool {

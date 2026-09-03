@@ -1,4 +1,4 @@
-//! Encontra e encerra processos pela API do Windows, sem chamar utilitário externo.
+//! Encontra e encerra processos pelas APIs nativas, sem chamar utilitário externo.
 //!
 //! O caminho óbvio seria `tasklist` e `taskkill`. Os dois funcionam, e os dois
 //! são exatamente o que um antivírus observa numa detonação: um processo sem
@@ -10,9 +10,8 @@
 //! árvore de processos e ainda corrige um defeito real: o `tasklist` era lido
 //! pela saída em texto, que muda com o idioma do Windows.
 
-/// Um processo visto na lista do Windows: quem ele é e quem o criou. O pai é
-/// o PID que o Windows anotou na criação; se esse pai já morreu, o número
-/// pode ter sido reaproveitado por outro programa qualquer.
+/// Um processo visto na lista do sistema: quem ele é e quem o criou. Se o pai
+/// já morreu, o PID pode ter sido reaproveitado por outro programa qualquer.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Processo {
     pub pid: u32,
@@ -101,7 +100,13 @@ mod imp {
             let mut saida: FILETIME = std::mem::zeroed();
             let mut nucleo: FILETIME = std::mem::zeroed();
             let mut usuario: FILETIME = std::mem::zeroed();
-            let ok = GetProcessTimes(processo, &mut criacao, &mut saida, &mut nucleo, &mut usuario);
+            let ok = GetProcessTimes(
+                processo,
+                &mut criacao,
+                &mut saida,
+                &mut nucleo,
+                &mut usuario,
+            );
             CloseHandle(processo);
             (ok != 0).then(|| {
                 (u64::from(criacao.dwHighDateTime) << 32) | u64::from(criacao.dwLowDateTime)
@@ -148,33 +153,130 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
 mod imp {
     use super::Processo;
+    use std::{
+        fs,
+        path::Path,
+        time::{Duration, Instant},
+    };
 
-    pub fn processos_por_nome(_nome: &str) -> Vec<Processo> {
-        Vec::new()
+    const ESPERA: Duration = Duration::from_secs(5);
+
+    fn uid(caminho: &Path) -> Option<u32> {
+        fs::read_to_string(caminho.join("status"))
+            .ok()?
+            .lines()
+            .find_map(|linha| linha.strip_prefix("Uid:"))?
+            .split_whitespace()
+            .next()?
+            .parse()
+            .ok()
     }
 
-    pub fn criado_em(_pid: u32) -> Option<u64> {
-        None
+    fn pai(caminho: &Path) -> Option<u32> {
+        fs::read_to_string(caminho.join("status"))
+            .ok()?
+            .lines()
+            .find_map(|linha| linha.strip_prefix("PPid:"))?
+            .trim()
+            .parse()
+            .ok()
     }
 
-    pub fn encerrar_todos(_pids: &[u32]) {}
+    fn nome(caminho: &Path) -> Option<String> {
+        fs::read_to_string(caminho.join("comm"))
+            .ok()
+            .map(|valor| valor.trim().to_string())
+            .filter(|valor| !valor.is_empty())
+            .or_else(|| {
+                fs::read_link(caminho.join("exe"))
+                    .ok()?
+                    .file_name()
+                    .map(|valor| valor.to_string_lossy().into_owned())
+            })
+    }
+
+    pub fn processos_por_nome(procurado: &str) -> Vec<Processo> {
+        let meu_uid = uid(Path::new("/proc/self"));
+        let Ok(entradas) = fs::read_dir("/proc") else {
+            return Vec::new();
+        };
+        entradas
+            .flatten()
+            .filter_map(|entrada| {
+                let pid: u32 = entrada.file_name().to_str()?.parse().ok()?;
+                let caminho = entrada.path();
+                if meu_uid.is_some() && uid(&caminho) != meu_uid {
+                    return None;
+                }
+                (nome(&caminho).as_deref() == Some(procurado)).then(|| Processo {
+                    pid,
+                    pai: pai(&caminho).unwrap_or(0),
+                })
+            })
+            .collect()
+    }
+
+    /// Campo 22 de `/proc/<pid>/stat`: ticks desde o boot em que o processo
+    /// nasceu. Basta ser estável e comparável; não precisa virar hora civil.
+    pub fn criado_em(pid: u32) -> Option<u64> {
+        let stat =
+            fs::read_to_string(Path::new("/proc").join(pid.to_string()).join("stat")).ok()?;
+        let depois_do_nome = stat.rsplit_once(')')?.1;
+        depois_do_nome.split_whitespace().nth(19)?.parse().ok()
+    }
+
+    fn existe(pid: u32) -> bool {
+        Path::new("/proc").join(pid.to_string()).exists()
+    }
+
+    pub fn encerrar_todos(pids: &[u32]) {
+        for &pid in pids {
+            if pid == std::process::id() {
+                continue;
+            }
+            // SAFETY: `kill` não retém ponteiros; o PID foi descoberto em /proc
+            // e o sinal é uma constante válida do libc.
+            unsafe {
+                libc::kill(pid as libc::pid_t, libc::SIGTERM);
+            }
+        }
+
+        let limite = Instant::now() + ESPERA;
+        while Instant::now() < limite && pids.iter().any(|pid| existe(*pid)) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        for &pid in pids.iter().filter(|pid| existe(**pid)) {
+            unsafe {
+                libc::kill(pid as libc::pid_t, libc::SIGKILL);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn encontra_o_proprio_processo_no_proc() {
+            let nome = fs::read_to_string("/proc/self/comm").unwrap();
+            assert!(processos_por_nome(nome.trim())
+                .iter()
+                .any(|processo| processo.pid == std::process::id()));
+            assert!(criado_em(std::process::id()).is_some());
+        }
+    }
 }
 
 pub use imp::{criado_em, encerrar_todos, processos_por_nome};
 
 /// Só os PIDs, para quem não se importa com a árvore.
 pub fn pids_por_nome(nome: &str) -> Vec<u32> {
-    processos_por_nome(nome).into_iter().map(|p| p.pid).collect()
-}
-
-/// Atalho para o caso mais comum: encerrar tudo que atende por um nome.
-pub fn encerrar_por_nome(nome: &str) {
-    encerrar_todos(&pids_por_nome(nome));
-}
-
-pub fn esta_rodando(nome: &str) -> bool {
-    !pids_por_nome(nome).is_empty()
+    processos_por_nome(nome)
+        .into_iter()
+        .map(|p| p.pid)
+        .collect()
 }

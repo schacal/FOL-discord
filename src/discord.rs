@@ -1,10 +1,7 @@
-//! Localiza e reinicia o Discord.
-//!
-//! A correção só vale a partir da próxima abertura do Discord. Pedir isso ao
-//! usuário é um passo que ele esquece — então o instalador faz sozinho.
+//! Localiza, encerra e abre o Discord em cada plataforma suportada.
 
 use anyhow::Result;
-use std::{ffi::OsStr, path::PathBuf, process::Command, time::Duration};
+use std::{collections::BTreeSet, ffi::OsStr, process::Command, time::Duration};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -14,6 +11,7 @@ use crate::{processos::Processo, sessao::Identidade};
 /// O lançador do Discord é detalhe interno: a janela do FOL-discord nunca
 /// deve revelar esse processo ao usuário.
 fn comando_oculto(programa: impl AsRef<OsStr>) -> Command {
+    #[allow(unused_mut)]
     let mut comando = Command::new(programa);
     #[cfg(windows)]
     {
@@ -23,36 +21,148 @@ fn comando_oculto(programa: impl AsRef<OsStr>) -> Command {
     comando
 }
 
-/// O lançador do Squirrel, que sempre aponta para a versão instalada no
-/// momento. Chamar por ele evita fixar `app-1.0.xxxx` no código e sobreviver
-/// mal à próxima atualização do Discord.
-pub fn lancador() -> Option<PathBuf> {
-    let base = std::env::var("LOCALAPPDATA").ok()?;
-    let p = PathBuf::from(base).join("Discord").join("Update.exe");
-    p.exists().then_some(p)
+#[cfg(windows)]
+mod imp {
+    use super::*;
+    use std::path::PathBuf;
+
+    pub const NOMES: &[&str] = &["Discord.exe"];
+
+    fn lancador() -> Option<PathBuf> {
+        let base = std::env::var("LOCALAPPDATA").ok()?;
+        let caminho = PathBuf::from(base).join("Discord").join("Update.exe");
+        caminho.exists().then_some(caminho)
+    }
+
+    pub fn abrir(_argumentos: &[String]) -> Result<bool> {
+        let Some(lancador) = lancador() else {
+            return Ok(false);
+        };
+        comando_oculto(lancador)
+            .args(["--processStart", "Discord.exe"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+        Ok(true)
+    }
 }
 
-const IMAGEM: &str = "Discord.exe";
+#[cfg(target_os = "linux")]
+mod imp {
+    use super::*;
+    use std::{
+        env,
+        path::{Path, PathBuf},
+        process::Stdio,
+    };
+
+    pub const NOMES: &[&str] = &["Discord", "discord", "DiscordCanary", "DiscordPTB"];
+    const FLATPAKS: &[&str] = &["com.discordapp.Discord", "com.discordapp.DiscordCanary"];
+
+    enum Lancador {
+        Nativo(PathBuf),
+        Flatpak { programa: PathBuf, id: &'static str },
+    }
+
+    fn no_path(nome: &str) -> Option<PathBuf> {
+        let caminho = Path::new(nome);
+        if caminho.components().count() > 1 {
+            return caminho.is_file().then(|| caminho.to_path_buf());
+        }
+        env::var_os("PATH")
+            .into_iter()
+            .flat_map(|valor| env::split_paths(&valor).collect::<Vec<_>>())
+            .map(|pasta| pasta.join(nome))
+            .find(|candidato| candidato.is_file())
+    }
+
+    fn flatpak_instalado(programa: &Path, id: &str) -> bool {
+        Command::new(programa)
+            .args(["info", id])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|estado| estado.success())
+    }
+
+    fn lancador() -> Option<Lancador> {
+        if let Some(definido) = env::var_os("FOL_DISCORD_EXECUTAVEL_DISCORD") {
+            let caminho = PathBuf::from(definido);
+            if caminho.is_file() {
+                return Some(Lancador::Nativo(caminho));
+            }
+        }
+
+        for nome in ["discord", "discord-ptb", "discord-canary"] {
+            if let Some(programa) = no_path(nome) {
+                return Some(Lancador::Nativo(programa));
+            }
+        }
+
+        let flatpak = no_path("flatpak")?;
+        FLATPAKS
+            .iter()
+            .find(|id| flatpak_instalado(&flatpak, id))
+            .map(|id| Lancador::Flatpak {
+                programa: flatpak,
+                id,
+            })
+    }
+
+    pub fn abrir(argumentos: &[String]) -> Result<bool> {
+        let Some(lancador) = lancador() else {
+            return Ok(false);
+        };
+        let mut comando = match lancador {
+            Lancador::Nativo(programa) => comando_oculto(programa),
+            Lancador::Flatpak { programa, id } => {
+                let mut comando = comando_oculto(programa);
+                comando.args(["run", id]);
+                comando
+            }
+        };
+        if crate::plataforma::pac_ativo(&crate::url_pac()) {
+            comando.arg(format!("--proxy-pac-url={}", crate::url_pac()));
+        }
+        comando
+            .args(argumentos)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+        Ok(true)
+    }
+}
+
+pub fn pids() -> Vec<u32> {
+    let mut pids = BTreeSet::new();
+    for nome in imp::NOMES {
+        pids.extend(crate::processos::pids_por_nome(nome));
+    }
+    pids.into_iter().collect()
+}
 
 pub fn esta_rodando() -> bool {
-    crate::processos::esta_rodando(IMAGEM)
+    !pids().is_empty()
 }
 
 /// O processo principal do Discord no ar, com a hora em que nasceu.
 ///
-/// O Discord roda vários `Discord.exe` — numa máquina comum são sete: o
-/// principal e seis filhos, entre GPU, renderizadores e utilitários. Filho
-/// nasce e morre no meio do uso; o principal, não. É a identidade dele que
-/// denuncia um reinício, e é por isso que um Ctrl+R não conta como um.
+/// O Discord roda vários processos — numa máquina comum são o principal e
+/// vários filhos, entre GPU, renderizadores e utilitários. Filho nasce e morre
+/// no meio do uso; o principal, não. É a identidade dele que denuncia um
+/// reinício, e é por isso que um Ctrl+R não conta como um.
 ///
-/// O principal é o único cujo pai não é outro `Discord.exe`. A hora de
-/// criação vai junto porque o Windows reaproveita PIDs depressa o bastante
-/// para um Discord novo nascer com o número do antigo.
+/// O principal é o único cujo pai não é outro processo do Discord. A hora de
+/// criação vai junto porque o sistema pode reaproveitar o PID do processo
+/// antigo para um Discord novo.
 pub fn principal() -> Option<Identidade> {
-    principal_entre(
-        &crate::processos::processos_por_nome(IMAGEM),
-        crate::processos::criado_em,
-    )
+    let processos: Vec<Processo> = imp::NOMES
+        .iter()
+        .flat_map(|nome| crate::processos::processos_por_nome(nome))
+        .collect();
+    principal_entre(&processos, crate::processos::criado_em)
 }
 
 fn principal_entre(
@@ -80,7 +190,8 @@ fn principal_entre(
     // Entre candidatos, o mais antigo — e quem tem hora conhecida vence quem
     // não tem, para um processo que o Windows não deixa consultar nunca
     // passar na frente do Discord deste usuário.
-    let mais_antigo = |(p, nasceu): &&(Processo, Option<u64>)| (nasceu.is_none(), nasceu.unwrap_or(0), p.pid);
+    let mais_antigo =
+        |(p, nasceu): &&(Processo, Option<u64>)| (nasceu.is_none(), nasceu.unwrap_or(0), p.pid);
 
     let raiz = nascidos
         .iter()
@@ -97,34 +208,23 @@ fn principal_entre(
 }
 
 /// Encerra todas as janelas do Discord e só volta quando elas saíram de fato.
-/// A espera é por handle de processo, não por relógio: reabrir cedo demais faz
-/// o Discord fixar de novo a região errada.
 fn encerrar() {
-    crate::processos::encerrar_por_nome(IMAGEM);
-    // Folga curta para o Squirrel soltar os arquivos antes do relançamento.
+    crate::processos::encerrar_todos(&pids());
     std::thread::sleep(Duration::from_millis(500));
 }
 
-/// Fecha e reabre o Discord. Devolve `false` quando não há Discord instalado
-/// — o que não é erro: o serviço fica de pé e corrige na primeira abertura.
+pub fn abrir(argumentos: &[String]) -> Result<bool> {
+    imp::abrir(argumentos)
+}
+
 pub fn reiniciar() -> Result<bool> {
-    let Some(lancador) = lancador() else {
-        return Ok(false);
-    };
     let estava_aberto = esta_rodando();
     if estava_aberto {
         encerrar();
     }
-    comando_oculto(lancador)
-        .args(["--processStart", "Discord.exe"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()?;
-    Ok(true)
+    abrir(&[])
 }
 
-/// Só encerra, sem reabrir. Usado na desinstalação: reabrir na hora faria o
-/// Discord fixar de novo a região errada.
 pub fn encerrar_se_aberto() -> bool {
     if esta_rodando() {
         encerrar();
@@ -199,7 +299,13 @@ mod tests {
         // um ciclo sem raiz — e o vigia declararia o Discord fechado com ele
         // aberto, deixando a janela em Abertura sem prazo nenhum.
         let arvore = vec![p(4000, 3990), p(3990, 4000), p(4200, 4000), p(4300, 4000)];
-        let hora = |pid: u32| Some(if pid == 4000 { 100 } else { 105 + u64::from(pid) });
+        let hora = |pid: u32| {
+            Some(if pid == 4000 {
+                100
+            } else {
+                105 + u64::from(pid)
+            })
+        };
         assert_eq!(
             principal_entre(&arvore, hora),
             Some(Identidade {

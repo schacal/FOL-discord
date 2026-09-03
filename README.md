@@ -11,10 +11,13 @@
   <a href="https://github.com/schacal/FOL-discord/releases/latest/download/FOL-discord-setup.exe">
     <img alt="Baixar o instalador para Windows" src="https://img.shields.io/badge/Baixar%20para%20Windows-instalador%20.exe-2ea44f?style=for-the-badge&logo=windows&logoColor=white">
   </a>
+  <a href="https://github.com/schacal/FOL-discord/releases/latest/download/FOL-discord-x86_64.AppImage">
+    <img alt="Baixar para Linux" src="https://img.shields.io/badge/Baixar%20para%20Linux-AppImage-f3b21a?style=for-the-badge&logo=linux&logoColor=black">
+  </a>
 </p>
 
 <p align="center">
-  <sub>Windows 10 e 11, 64 bits. O download começa na hora, sempre na versão mais recente.</sub>
+  <sub>Windows 10/11 e Linux x86_64. O download começa na hora, sempre na versão mais recente.</sub>
 </p>
 
 <p align="center">
@@ -30,6 +33,8 @@
 ---
 
 ## Instalar
+
+### Windows
 
 1. [**Baixe o `FOL-discord-setup.exe`**](https://github.com/schacal/FOL-discord/releases/latest/download/FOL-discord-setup.exe)
 2. Abra o arquivo e siga o instalador
@@ -57,6 +62,22 @@ Baixa o mesmo instalador da versão mais recente, roda em modo silencioso e abre
 a janela no fim. Serve para quem prefere o terminal ou instala em vários PCs.
 
 </details>
+
+### Linux
+
+Baixe na [release mais recente](https://github.com/schacal/FOL-discord/releases/latest)
+o formato da sua distribuição:
+
+| Distribuição | Arquivo | Instalação |
+| --- | --- | --- |
+| Debian / Ubuntu | `FOL-discord-x86_64.deb` | `sudo apt install ./FOL-discord-x86_64.deb` |
+| Fedora / RHEL | `FOL-discord-x86_64.rpm` | `sudo dnf install ./FOL-discord-x86_64.rpm` |
+| Arch Linux | `*.pkg.tar.zst` | `sudo pacman -U ./fol-discord-*.pkg.tar.zst` |
+| openSUSE | `FOL-discord-x86_64.AppImage` | dê permissão de execução e abra |
+
+Na primeira abertura, use a entrada **Discord (FOL-discord)** criada no menu.
+Ela aplica o PAC somente ao Discord; o proxy global do desktop não é alterado.
+O Discord nativo, Snap e Flatpak são detectados automaticamente.
 
 ## O que ele faz
 
@@ -94,8 +115,9 @@ falou com o Discord, nunca *o quê*. Vale ler [a página de
 segurança](docs/seguranca.md) antes de instalar: ela é honesta sobre o que fica
 exposto.
 
-**O ping não muda.** Voz e tela viajam em UDP e nunca passam pelo proxy — o
-proxy do Windows só afeta TCP. O servidor de voz continua sendo o brasileiro.
+**O ping não muda.** Voz e tela viajam em UDP e nunca passam pelo proxy — a
+configuração aplicada ao Discord só afeta TCP. O servidor de voz continua
+sendo o brasileiro.
 
 ## A janela
 
@@ -107,21 +129,22 @@ Fechar a janela só a esconde na bandeja; a correção continua rodando.
 | **Verificar agora** | confere o estado e religa o serviço se ele tiver parado |
 | **Reiniciar Discord** | fecha e abre só o Discord |
 | **Iniciar com o PC** | liga ou desliga a abertura automática no logon |
-| **Desinstalar** | abre o desinstalador do Windows e desfaz tudo |
+| **Desinstalar** | abre o desinstalador ou gerenciador de pacotes e desfaz tudo |
 
 A janela confere se saiu versão nova ao abrir e toda vez que você a chama pela
 bandeja; se houver, mostra um botão ao lado da versão que abre o download. Ela
-nunca instala nada por conta própria. Para atualizar, abra o instalador novo
-por cima e, quando ele perguntar, escolha **Não desinstalar**: ele troca os
-arquivos e a configuração fica como estava.
+nunca instala nada por conta própria. No Windows, abra o instalador novo por
+cima e, quando ele perguntar, escolha **Não desinstalar**: ele troca os arquivos
+e a configuração fica como estava. No Linux, instale o pacote novo ou substitua
+o AppImage anterior.
 
 ## Desinstalar
 
-Botão **Desinstalar** dentro da janela, ou **FOL-discord** em *Aplicativos
-instalados* do Windows. Pelo terminal: `fol-discord desinstalar`.
+Botão **Desinstalar** dentro da janela, ou **FOL-discord** no gerenciador de
+aplicativos do sistema. Pelo terminal: `fol-discord desinstalar`.
 
-Devolve o proxy do Windows ao valor anterior, sai do PATH e apaga a pasta. Sem
-rastro, e sem tocar em nenhum arquivo do Discord.
+Desfaz a configuração, sai do PATH e apaga a pasta por usuário. Sem tocar em
+nenhum arquivo do Discord.
 
 ## Comandos
 

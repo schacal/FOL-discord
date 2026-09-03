@@ -1,5 +1,9 @@
 //! Contratos puros para a inicialização da interface instalada.
 
+#[cfg(windows)]
+#[rustfmt::skip]
+mod imp {
+
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -331,7 +335,7 @@ fn desinstalador_e_argumentos(
     }
 }
 
-pub fn comando_desinstalador() -> Result<Command, String> {
+pub fn comando_desinstalador(_servico: &Path) -> Result<Command, String> {
     let interface = env::current_exe().map_err(|erro| format!("não encontrei a interface atual: {erro}"))?;
     let (uninstaller, argumentos) =
         desinstalador_e_argumentos(&interface, linha_de_comando_registrada())?;
@@ -491,3 +495,152 @@ mod tests {
         assert!(!xml_da_tarefa_corresponde(&outra_acao, interface));
     }
 }
+
+}
+
+#[cfg(target_os = "linux")]
+mod imp {
+    use std::{
+        env, fs,
+        path::{Path, PathBuf},
+        process::Command,
+    };
+
+    const ASSINATURA: &str = "X-FOL-Discord-Managed=true";
+
+    fn appimage() -> Option<PathBuf> {
+        env::var_os("APPIMAGE")
+            .filter(|valor| !valor.is_empty())
+            .map(PathBuf::from)
+            .filter(|caminho| caminho.is_absolute() && caminho.is_file())
+    }
+
+    fn caminho_persistente(interface: &Path) -> PathBuf {
+        appimage().unwrap_or_else(|| interface.to_path_buf())
+    }
+
+    fn configuracao() -> PathBuf {
+        env::var_os("XDG_CONFIG_HOME")
+            .filter(|valor| !valor.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                env::var_os("HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| env::temp_dir().join("fol-discord"))
+                    .join(".config")
+            })
+    }
+
+    fn caminho_autostart() -> PathBuf {
+        configuracao().join("autostart").join("fol-discord.desktop")
+    }
+
+    fn escapar_exec(valor: &str) -> String {
+        let mut saida = String::with_capacity(valor.len() + 2);
+        saida.push('"');
+        for caractere in valor.chars() {
+            match caractere {
+                '\\' | '"' | '`' | '$' => {
+                    saida.push('\\');
+                    saida.push(caractere);
+                }
+                '%' => saida.push_str("%%"),
+                _ => saida.push(caractere),
+            }
+        }
+        saida.push('"');
+        saida
+    }
+
+    fn conteudo(interface: &Path) -> String {
+        format!(
+            "[Desktop Entry]\nType=Application\nName=FOL-discord\nComment=Inicia a correção regional do Discord\nExec={} --bandeja\nIcon=fol-discord\nTerminal=false\nX-GNOME-Autostart-enabled=true\n{}\n",
+            escapar_exec(&interface.display().to_string()),
+            ASSINATURA
+        )
+    }
+
+    fn gerenciado(caminho: &Path) -> bool {
+        fs::read_to_string(caminho)
+            .map(|texto| texto.lines().any(|linha| linha == ASSINATURA))
+            .unwrap_or(false)
+    }
+
+    pub fn interface_instalada(atual: &Path) -> bool {
+        if appimage().is_some() {
+            return true;
+        }
+        atual.is_absolute()
+            && atual
+                .parent()
+                .is_some_and(|pasta| pasta.join("fol-discord").is_file())
+    }
+
+    pub fn tarefa_ativa(interface: &Path) -> bool {
+        let interface = caminho_persistente(interface);
+        let caminho = caminho_autostart();
+        gerenciado(&caminho)
+            && fs::read_to_string(caminho)
+                .map(|texto| texto == conteudo(&interface))
+                .unwrap_or(false)
+    }
+
+    pub fn ativar_tarefa(interface: &Path, _servico: &Path) -> Result<(), String> {
+        if !interface.is_absolute() || !interface_instalada(interface) {
+            return Err("a inicialização automática exige uma interface instalada".into());
+        }
+        let interface = caminho_persistente(interface);
+        let caminho = caminho_autostart();
+        if caminho.exists() && !gerenciado(&caminho) {
+            return Err(format!(
+                "a entrada de autostart {} pertence a outro programa",
+                caminho.display()
+            ));
+        }
+        fs::create_dir_all(caminho.parent().ok_or("entrada de autostart sem pasta")?)
+            .map_err(|erro| format!("não consegui criar a pasta de autostart: {erro}"))?;
+        fs::write(caminho, conteudo(&interface))
+            .map_err(|erro| format!("não consegui registrar o autostart: {erro}"))
+    }
+
+    pub fn desativar_tarefa() -> Result<(), String> {
+        let caminho = caminho_autostart();
+        if caminho.exists() && !gerenciado(&caminho) {
+            return Err(format!(
+                "a entrada de autostart {} não pertence ao FOL-discord",
+                caminho.display()
+            ));
+        }
+        match fs::remove_file(caminho) {
+            Ok(()) => Ok(()),
+            Err(erro) if erro.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(erro) => Err(format!("não consegui remover o autostart: {erro}")),
+        }
+    }
+
+    pub fn comando_desinstalador(servico: &Path) -> Result<Command, String> {
+        if !servico.is_file() {
+            return Err("o serviço instalado não foi encontrado".into());
+        }
+        let mut comando = Command::new(servico);
+        comando.arg("remover-pacote");
+        Ok(comando)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn autostart_xdg_abre_a_interface_na_bandeja() {
+            let texto = conteudo(Path::new("/opt/FOL discord/fol-discord-janela"));
+            assert!(texto.contains("Exec=\"/opt/FOL discord/fol-discord-janela\" --bandeja"));
+            assert!(texto.contains("Terminal=false"));
+            assert!(texto.contains(ASSINATURA));
+        }
+    }
+}
+
+pub use imp::{
+    ativar_tarefa, comando_desinstalador, desativar_tarefa, interface_instalada, tarefa_ativa,
+};

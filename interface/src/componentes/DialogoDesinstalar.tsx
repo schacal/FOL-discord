@@ -64,7 +64,7 @@ export function DialogoDesinstalar({
                 Removido.
               </Dialog.Title>
               <Dialog.Description className="mt-2 text-[14px] leading-relaxed text-texto2">
-                O proxy automático do Windows voltou ao que era antes. Fechando.
+                A configuração automática de proxy voltou ao que era antes. Fechando.
               </Dialog.Description>
             </>
           ) : (
@@ -75,7 +75,7 @@ export function DialogoDesinstalar({
               <Dialog.Description asChild>
                 <div className="mt-2 space-y-2 text-[14px] leading-relaxed text-texto2">
                   <p>
-                    O proxy automático do Windows volta ao valor que tinha antes, o
+                    A configuração automática de proxy volta ao valor que tinha antes, o
                     programa sai do PATH e a pasta é apagada. Nenhum arquivo do
                     Discord é tocado.
                   </p>

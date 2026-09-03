@@ -20,6 +20,7 @@ fol-discord/
 │   ├── src/           a janela: estados, métricas, atividade
 │   ├── src-tauri/     a moldura, a bandeja, os ícones e o setup NSIS
 │   └── scripts/       ícones da bandeja e os testes de embalagem
+├── packaging/              receitas e verificações dos pacotes Linux
 ├── docs/
 ├── assets/                 materiais visuais do repositório
 │   ├── banner.png         capa do README
@@ -31,9 +32,10 @@ fol-discord/
 
 São dois projetos Rust separados. O da raiz é o serviço; o de
 `interface/src-tauri/` é a janela. O `build.rs` da janela compila o serviço e o
-entrega ao empacotador como **sidecar**: o instalador NSIS grava
-`fol-discord.exe` ao lado de `fol-discord-janela.exe`, e é de lá que a primeira
-abertura o copia para `%LOCALAPPDATA%\FolDiscord` e o inicia.
+entrega ao empacotador como **sidecar**: o NSIS grava `fol-discord.exe` ao lado
+de `fol-discord-janela.exe`; os pacotes Linux gravam `fol-discord` ao lado de
+`fol-discord-janela`. Na primeira abertura, a janela instala uma cópia por
+usuário e a inicia.
 
 Até a v0.2.5 a janela carregava o serviço inteiro como dado (`include_bytes!`)
 e o gravava em disco ao abrir. Um executável completo dentro da seção de dados
@@ -75,6 +77,29 @@ programa é a logo ilustrada, que a chave de desinstalação bate com o
 instalador, e que a embalagem produziu um único `*-setup.exe`. Rode-a
 **depois** do build.
 
+### Dependências e pacotes Linux
+
+Use os pacotes de desenvolvimento equivalentes da sua distribuição:
+
+| Família | Dependências principais |
+| --- | --- |
+| Debian / Ubuntu | `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf` |
+| Fedora / RHEL | `webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel patchelf` |
+| Arch Linux | `webkit2gtk-4.1 libayatana-appindicator librsvg patchelf` |
+| openSUSE | `webkit2gtk3-devel libappindicator3-1 librsvg-devel patchelf` |
+
+Depois, gere e confira os três formatos do Tauri:
+
+```bash
+npm ci --prefix interface
+npm --prefix interface run tauri -- build --bundles deb,rpm,appimage
+bash packaging/linux/verificar-pacotes.sh
+```
+
+O `.deb` atende Debian/Ubuntu, o `.rpm` atende Fedora/RHEL e o AppImage é a
+saída portátil para openSUSE. Arch usa `packaging/arch/PKGBUILD`, que a release
+compila em um contêiner Arch e publica como `.pkg.tar.zst`.
+
 ## Ícones
 
 ```bash
@@ -90,7 +115,7 @@ repositório.
 
 ## Versões
 
-Cinco lugares precisam concordar a cada release:
+Sete lugares precisam concordar a cada release:
 
 | Arquivo | Campo |
 | --- | --- |
@@ -99,6 +124,8 @@ Cinco lugares precisam concordar a cada release:
 | `interface/package.json` | `version` |
 | `interface/src-tauri/tauri.conf.json` | `version` |
 | `interface/src/App.tsx` | `VERSAO_PADRAO` |
+| `packaging/arch/PKGBUILD` | `pkgver` |
+| `packaging/arch/.SRCINFO` | `pkgver` e URL do tag |
 
 O último é o que a janela mostra antes de o serviço responder. O
 `interface/package-lock.json` acompanha o `package.json`.
@@ -111,8 +138,8 @@ versão nova.
 ## Release
 
 Empurrar uma tag `v*` dispara o `.github/workflows/release.yml`, que compila no
-GitHub Actions e publica a release. O instalador publicado nunca é enviado da
-máquina de ninguém.
+GitHub Actions para Windows e Linux e publica a release. Nenhum instalador ou
+pacote publicado vem da máquina de alguém.
 
 ```bash
 git tag -a v0.2.7 -m "v0.2.7"
@@ -127,6 +154,10 @@ Cada release publica:
 | `FOL-discord_<versão>_x64-setup.exe` | o mesmo arquivo, com o nome que o NSIS carimba; é o que a janela instalada procura para avisar de versão nova |
 | `SHA256SUMS.txt` | a soma do instalador, para quem quer conferir na mão |
 | atestado de procedência | assinado pelo GitHub; amarra o arquivo ao commit e à execução que o produziu |
+| `FOL-discord-x86_64.deb` | Debian e Ubuntu |
+| `FOL-discord-x86_64.rpm` | Fedora e distribuições compatíveis com RPM |
+| `FOL-discord-x86_64.AppImage` | execução portátil, inclusive no openSUSE |
+| `fol-discord-<versão>-1-x86_64.pkg.tar.zst` | Arch Linux |
 
 Antes de empurrar a tag, anote a versão em `CHANGELOG.md` e rode as três
 suítes (`cargo test --release` na raiz, `cargo test` em `interface/src-tauri` e
