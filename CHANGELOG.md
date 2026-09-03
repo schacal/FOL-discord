@@ -3,6 +3,35 @@
 Cada versão publicada em [Releases](https://github.com/schacal/FOL-discord/releases)
 e o que mudou nela. Datas no formato ano-mês-dia.
 
+## 0.2.10 — 2026-09-02
+
+**O TCP dos servidores de voz não sai mais pelo exterior.** Na 0.2.9,
+`c-gru*.discord.media` — a sinalização da voz e da transmissão de tela —
+tinha entrado na lista que sai pelo exterior na abertura, junto com o resto
+do Discord. Isso prendia esse TCP num proxy público gratuito, que o
+derrubava quando a janela fechava — e era exatamente aí que uma transmissão
+de tela começada no primeiro minuto podia falhar. Ele nunca decidiu região
+nenhuma, então agora sai direto sempre, mesmo na abertura.
+
+**Reconexão do gateway não estica mais a janela.** Cada vez que o proxy
+gratuito derrubava o gateway e o Discord reconectava, isso contava como uma
+conexão nova decidindo região e reiniciava a contagem dos 30 segundos do
+zero. Medidas em produção, quatro reconexões numa abertura só esticaram a
+janela até bater no teto de 120 segundos. Agora só a primeira conexão do
+gateway em cada abertura alimenta o relógio.
+
+**A janela rearma já na primeira leitura vazia do vigia.** Antes, só a
+sequência inteira de três leituras vazias reabria a janela depois de um
+reinício do Discord. Se a primeira conexão do processo novo chegasse antes
+de essa sequência completar, ela saía direto contra uma janela que ainda
+não tinha reaberto, e a correção do reinício se perdia. O custo aceito: uma
+leitura vazia transitória, numa sessão já estabelecida, abre uma janela de
+30 segundos à toa, sem nenhuma linha "Discord novo" no log.
+
+**O log agora diz quanto durou a abertura.** A linha que fecha a janela
+virou "sessão aberta após N segundos", em vez de só "sessão aberta" — mais
+fácil de ler sem contar linha por linha.
+
 ## 0.2.9 — 2026-09-02
 
 **Na abertura, tudo o que é do Discord sai pelo exterior.** Até aqui só três

@@ -4,9 +4,11 @@
 //! Em vários provedores brasileiros essa decisão sai errada e a transmissão de
 //! tela para de funcionar. Este programa faz o mesmo que ligar uma VPN para
 //! abrir o Discord e desligá-la assim que ele entrou: enquanto a sessão está
-//! nascendo, todo o tráfego do Discord sai por um IP estrangeiro; depois,
-//! tudo volta a sair direto, com o ping de sempre, e a região fica gravada na
-//! sessão. A voz, a câmera e a tela são UDP e nunca passam por aqui.
+//! nascendo, o tráfego do Discord que decide a região sai por um IP
+//! estrangeiro; depois, tudo volta a sair direto, com o ping de sempre, e a
+//! região fica gravada na sessão. A voz, a câmera e a tela são UDP e nunca
+//! passam por aqui — nem o TCP dos servidores de voz, que não decide região
+//! nenhuma, sai do país.
 
 #![windows_subsystem = "windows"]
 
@@ -348,8 +350,13 @@ fn vigiar_sessao(sessao: std::sync::Arc<sessao::Sessao>, piscina: pool::Pool) {
         if sessao.avaliar(agora, piscina.quantidade() > 0) {
             // A região já está gravada na sessão. Daqui em diante o Discord
             // fala direto, e quem ficou preso no exterior acabou de cair para
-            // reconectar pelo caminho curto — a VPN desligou.
-            socks::log::linha("sessão aberta; o Discord volta a falar direto");
+            // reconectar pelo caminho curto — a VPN desligou. A duração conta
+            // desde que a janela armou, e ajuda a ler o log sem contar linha
+            // por linha.
+            let duracao = sessao.armada_ha(agora).as_secs();
+            socks::log::linha(&format!(
+                "sessão aberta após {duracao} s; o Discord volta a falar direto"
+            ));
         }
 
         std::thread::sleep(INTERVALO_VIGIA);

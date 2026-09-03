@@ -1,10 +1,14 @@
 //! Decide, por host, se a conexão sai pelo exterior ou direto.
 //!
 //! O modelo é o de uma VPN que se liga para abrir o Discord e se desliga
-//! assim que ele entrou. Enquanto a sessão está nascendo, **todo** o domínio
-//! do Discord sai por um IP estrangeiro — API, gateway, CDN, anexos e o TCP
-//! dos servidores de voz. Com a sessão aberta, a região já está gravada nela
-//! e tudo volta a sair direto.
+//! assim que ele entrou. Enquanto a sessão está nascendo, **quase todo** o
+//! domínio do Discord sai por um IP estrangeiro — API, gateway, CDN e anexos.
+//! O TCP dos servidores de voz e da transmissão (`c-*.discord.media`) fica de
+//! fora dessa regra e sai direto sempre: ele não decide região nenhuma, e
+//! prendê-lo no proxy gratuito durante a abertura só pagava latência e uma
+//! queda no fechamento da janela — era isso que fazia uma transmissão de tela
+//! começada nesse minuto falhar. Com a sessão aberta, a região já está
+//! gravada nela e tudo o mais volta a sair direto.
 //!
 //! Duas listas, com papéis diferentes, que não podem ser confundidas:
 //!
@@ -19,10 +23,13 @@
 
 use crate::sessao::Fase;
 
-/// Todo o domínio do Discord. É o que sai pelo exterior enquanto a sessão
-/// está nascendo. `discordapp.net` não está aqui porque o PAC nunca o entrega
-/// ao proxy local — ele sai direto antes de chegar a este código.
-const DISCORD: &[&str] = &["discord.com", "discordapp.com", "discord.gg", "discord.media"];
+/// O domínio do Discord que decide ou carrega a decisão da região. É o que
+/// sai pelo exterior enquanto a sessão está nascendo. `discordapp.net` não
+/// está aqui porque o PAC nunca o entrega ao proxy local — ele sai direto
+/// antes de chegar a este código. `discord.media` também não está aqui: só
+/// `latency.discord.media` decide região; o resto do domínio — os servidores
+/// de voz — vai direto sempre, ver `voz_vai_direto_mesmo_na_abertura`.
+const DISCORD: &[&str] = &["discord.com", "discordapp.com", "discord.gg", "latency.discord.media"];
 
 /// Hosts cujo IP de origem decide a região da sessão. Só eles alimentam o
 /// relógio do silêncio que fecha a janela.
@@ -110,7 +117,6 @@ mod tests {
         "gateway-us-east1-b.discord.gg",
         "latency.discord.media",
         "cdn.discordapp.com",
-        "c-gru17-851904d3.discord.media",
         "status.discord.com",
         "discord.gg",
         "DISCORD.COM.",
@@ -118,10 +124,25 @@ mod tests {
 
     #[test]
     fn na_abertura_todo_o_discord_sai_por_fora() {
-        // É a VPN ligada: API, gateway, CDN, voz por TCP, até a página de
-        // avisos. Nada do Discord fica de fora enquanto a sessão nasce.
+        // É a VPN ligada: API, gateway, CDN, até a página de avisos. A voz
+        // por TCP é a exceção — ver `voz_vai_direto_mesmo_na_abertura`.
         for h in DISCORD_INTEIRO {
             assert_eq!(decidir(h, Fase::Abertura), Rota::Exterior, "{h}");
+        }
+    }
+
+    #[test]
+    fn voz_vai_direto_mesmo_na_abertura() {
+        // O TCP dos servidores de voz e da transmissão não decide região
+        // nenhuma. Prendê-lo no proxy gratuito durante a abertura só pagava
+        // latência e uma queda no fechamento da janela — e era exatamente o
+        // que fazia uma transmissão de tela começada nesse minuto falhar.
+        for h in [
+            "c-gru17-851904d3.discord.media",
+            "c-gru18-6fa2a6cb.discord.media",
+            "discord.media",
+        ] {
+            assert_eq!(decidir(h, Fase::Abertura), Rota::Direta, "{h}");
         }
     }
 

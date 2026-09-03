@@ -83,7 +83,7 @@ Três coisas seguram a janela aberta, porque cada uma delas já fez a correção
 
 O preço disso é que tudo o que o Discord faz nesse primeiro minuto passa por um proxy público gratuito: as mensagens vêm devagar, as imagens demoram a carregar. Passado esse minuto, tudo é derrubado e volta pelo caminho curto, e assim fica pelo resto da sessão.
 
-Há um custo mais específico: **começar uma transmissão de tela nesse minuto pode falhar**. A sinalização dela viaja pelo websocket do gateway, que é derrubado quando a janela fecha, e a transmissão perde o fio no meio. É inerente ao modelo — desligar a VPN corta as conexões — e é por isso que a janela fecha o mais cedo que dá, e por isso o relógio só ouve as conexões que decidem a região.
+Há um custo mais específico, e menor do que antes: **começar uma transmissão de tela bem no instante em que a janela fecha pode falhar**. A sinalização dela viaja pelo websocket do gateway, que é derrubado quando a janela fecha, e a transmissão perde o fio no meio. O TCP dos servidores de voz em si não corre mais esse risco — ele nunca é desviado, então nunca é derrubado. É inerente ao que sobra no modelo — desligar a VPN corta as conexões que ainda estão nela — e é por isso que a janela fecha o mais cedo que dá, e por isso o relógio só ouve as conexões que decidem a região.
 
 Ao fechar, o programa **derruba as conexões que ele mesmo abriu pelo exterior**. Não dá para mover uma conexão TCP viva de rota, então o jeito de tirar o gateway do proxy é fechá-lo: o Discord percebe, reconecta com `RESUME` — mesma sessão, mesma região — e agora pelo caminho curto. É exatamente o que acontece quando você desliga a VPN depois de abrir o Discord, que é a correção manual que este projeto automatiza.
 
@@ -106,15 +106,15 @@ Decide, por host, quem sai por fora — e só enquanto a sessão está na fase d
 | Sai pelo exterior, na abertura | Sai direto, sempre |
 | --- | --- |
 | `discord.com` e tudo abaixo dele, inclusive `status.discord.com` | `media.discordapp.net` — o PAC nunca o entrega ao proxy |
-| `discord.gg`, com o gateway em todos os sabores regionais | todo o resto da internet |
-| `discordapp.com`, inclusive a CDN | |
-| `discord.media`, inclusive o TCP dos servidores de voz (`c-gru*`) | |
+| `discord.gg`, com o gateway em todos os sabores regionais | `c-*.discord.media` — o TCP dos servidores de voz e da transmissão |
+| `discordapp.com`, inclusive a CDN | todo o resto da internet |
+| `latency.discord.media` | |
 
 Com a sessão já aberta, a coluna da esquerda deixa de existir: `decidir` devolve `Direta` para tudo.
 
 A regra é por domínio do Discord, nunca "qualquer host", e isso não é detalhe: o SOCKS local aceita conexão de qualquer programa da máquina. Se ele devolvesse `Exterior` sem olhar o host, viraria um relay estrangeiro de uso geral durante a janela. Os testes `resto_da_internet_vai_direto` e `nao_confunde_sufixo` são a guarda disso.
 
-O mesmo módulo responde a uma segunda pergunta, separada da primeira: `decide_regiao` diz quais hosts alimentam o relógio que fecha a janela — `discord.com` (menos a página de avisos), o gateway e `latency.discord.media`. A voz por TCP e a CDN saem por fora, mas não seguram a janela, pelo mesmo motivo: o IP de origem dessas conexões não decide a região, e contá-las só manteria a janela aberta por mais tempo — a CDN, em particular, recebe conexão nova o tempo todo num Discord em uso.
+O mesmo módulo responde a uma segunda pergunta, separada da primeira: `decide_regiao` diz quais hosts alimentam o relógio que fecha a janela — `discord.com` (menos a página de avisos), o gateway e `latency.discord.media`. A CDN sai por fora durante a abertura mas não segura a janela: o IP de origem dessas conexões não decide a região, e contá-la só manteria a janela aberta por mais tempo — ela recebe conexão nova o tempo todo num Discord em uso. O TCP dos servidores de voz (`c-*.discord.media`) vai além: nem sai por fora, em fase nenhuma — prendê-lo no proxy gratuito durante a abertura só pagava latência e uma queda no fechamento da janela, sem decidir região nenhuma em troca.
 
 ### 3. Piscina de proxies (`src/pool.rs`)
 
