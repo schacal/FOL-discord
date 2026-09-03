@@ -8,7 +8,7 @@
 //! 127.0.0.1:9252. Este processo não fala com a piscina, não lê o `fol.log` e
 //! não toca no registro: quem manda nessas coisas continua sendo o serviço.
 
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 use tauri::{
     image::Image,

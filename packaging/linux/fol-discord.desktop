@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=FOL-discord
+Comment=Corrige a transmissão de tela e a câmera do Discord no Brasil
+Exec=fol-discord-janela
+Icon=fol-discord
+Terminal=false
+Categories=Network;InstantMessaging;
+StartupWMClass=fol-discord-janela
+Keywords=Discord;proxy;streaming;

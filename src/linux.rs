@@ -8,6 +8,7 @@ use std::{
     fs,
     os::unix::fs::{symlink, PermissionsExt},
     path::{Path, PathBuf},
+    process::Command,
 };
 
 pub const NOME_SERVICO: &str = "fol-discord";
@@ -240,6 +241,92 @@ pub fn cli_registrada(servico: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn programa_sistema(nome: &str) -> Option<PathBuf> {
+    ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        .into_iter()
+        .map(|pasta| Path::new(pasta).join(nome))
+        .find(|candidato| candidato.is_file())
+}
+
+fn familia_em(texto: &str) -> String {
+    texto
+        .lines()
+        .filter_map(|linha| {
+            let (nome, valor) = linha.split_once('=')?;
+            matches!(nome, "ID" | "ID_LIKE").then(|| valor.trim_matches('"').to_ascii_lowercase())
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn familia_distribuicao() -> String {
+    familia_em(&fs::read_to_string("/etc/os-release").unwrap_or_default())
+}
+
+fn candidatos_da_familia(familia: &str) -> &'static [(&'static str, &'static [&'static str])] {
+    const APT: &[&str] = &["remove", "--yes", "fol-discord"];
+    const DNF: &[&str] = &["remove", "--assumeyes", "fol-discord"];
+    const PACMAN: &[&str] = &["--remove", "--noconfirm", "fol-discord"];
+    const ZYPPER: &[&str] = &["--non-interactive", "remove", "fol-discord"];
+
+    if familia.contains("arch") {
+        &[("pacman", PACMAN)]
+    } else if familia.contains("suse") {
+        &[("zypper", ZYPPER)]
+    } else if familia.contains("fedora") || familia.contains("rhel") {
+        &[("dnf", DNF)]
+    } else if familia.contains("debian") || familia.contains("ubuntu") {
+        &[("apt-get", APT)]
+    } else {
+        &[
+            ("apt-get", APT),
+            ("dnf", DNF),
+            ("pacman", PACMAN),
+            ("zypper", ZYPPER),
+        ]
+    }
+}
+
+fn comando_do_gerenciador() -> Option<(PathBuf, &'static [&'static str])> {
+    candidatos_da_familia(&familia_distribuicao())
+        .iter()
+        .find_map(|(programa, argumentos)| programa_sistema(programa).map(|p| (p, *argumentos)))
+}
+
+/// Remove primeiro o pacote que contém a interface. O processo atual é a
+/// cópia por usuário do núcleo, portanto continua vivo até poder limpar XDG e
+/// o launcher depois que o gerenciador termina.
+pub fn remover_pacote_sistema() -> Result<()> {
+    if let Some(appimage) = variavel_caminho("APPIMAGE") {
+        let e_appimage = appimage.is_absolute()
+            && appimage.is_file()
+            && appimage
+                .extension()
+                .is_some_and(|extensao| extensao.eq_ignore_ascii_case("AppImage"));
+        if !e_appimage {
+            bail!("APPIMAGE não aponta para um arquivo .AppImage válido");
+        }
+        fs::remove_file(&appimage)
+            .with_context(|| format!("removendo o AppImage {}", appimage.display()))?;
+        return Ok(());
+    }
+
+    let pkexec = programa_sistema("pkexec")
+        .context("não encontrei o pkexec para pedir autorização administrativa")?;
+    let (gerenciador, argumentos) = comando_do_gerenciador().context(
+        "não reconheci apt, dnf, pacman ou zypper; remova o pacote fol-discord manualmente",
+    )?;
+    let estado = Command::new(pkexec)
+        .arg(&gerenciador)
+        .args(argumentos)
+        .status()
+        .with_context(|| format!("abrindo {}", gerenciador.display()))?;
+    if !estado.success() {
+        bail!("o gerenciador de pacotes não removeu o fol-discord");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,5 +350,19 @@ mod tests {
         assert!(texto.contains("Exec=\"/opt/FOL discord/fol-discord\" rodar"));
         assert!(texto.contains("Terminal=false"));
         assert!(texto.contains(ASSINATURA));
+    }
+
+    #[test]
+    fn reconhece_familia_da_distribuicao() {
+        let texto = "NAME=Exemplo\nID=fedora\nID_LIKE=\"rhel centos\"\nVERSION_ID=42\n";
+        assert_eq!(familia_em(texto), "fedora rhel centos");
+    }
+
+    #[test]
+    fn escolhe_o_gerenciador_das_quatro_familias() {
+        assert_eq!(candidatos_da_familia("debian ubuntu")[0].0, "apt-get");
+        assert_eq!(candidatos_da_familia("fedora rhel")[0].0, "dnf");
+        assert_eq!(candidatos_da_familia("arch")[0].0, "pacman");
+        assert_eq!(candidatos_da_familia("opensuse suse")[0].0, "zypper");
     }
 }

@@ -335,7 +335,7 @@ fn desinstalador_e_argumentos(
     }
 }
 
-pub fn comando_desinstalador() -> Result<Command, String> {
+pub fn comando_desinstalador(_servico: &Path) -> Result<Command, String> {
     let interface = env::current_exe().map_err(|erro| format!("não encontrei a interface atual: {erro}"))?;
     let (uninstaller, argumentos) =
         desinstalador_e_argumentos(&interface, linha_de_comando_registrada())?;
@@ -507,7 +507,17 @@ mod imp {
     };
 
     const ASSINATURA: &str = "X-FOL-Discord-Managed=true";
-    const MARCADOR_INSTALACAO: &str = ".fol-discord-instalada";
+
+    fn appimage() -> Option<PathBuf> {
+        env::var_os("APPIMAGE")
+            .filter(|valor| !valor.is_empty())
+            .map(PathBuf::from)
+            .filter(|caminho| caminho.is_absolute() && caminho.is_file())
+    }
+
+    fn caminho_persistente(interface: &Path) -> PathBuf {
+        appimage().unwrap_or_else(|| interface.to_path_buf())
+    }
 
     fn configuracao() -> PathBuf {
         env::var_os("XDG_CONFIG_HOME")
@@ -557,16 +567,21 @@ mod imp {
     }
 
     pub fn interface_instalada(atual: &Path) -> bool {
-        atual
-            .parent()
-            .is_some_and(|pasta| pasta.join(MARCADOR_INSTALACAO).is_file())
+        if appimage().is_some() {
+            return true;
+        }
+        atual.is_absolute()
+            && atual
+                .parent()
+                .is_some_and(|pasta| pasta.join("fol-discord").is_file())
     }
 
     pub fn tarefa_ativa(interface: &Path) -> bool {
+        let interface = caminho_persistente(interface);
         let caminho = caminho_autostart();
         gerenciado(&caminho)
             && fs::read_to_string(caminho)
-                .map(|texto| texto == conteudo(interface))
+                .map(|texto| texto == conteudo(&interface))
                 .unwrap_or(false)
     }
 
@@ -574,6 +589,7 @@ mod imp {
         if !interface.is_absolute() || !interface_instalada(interface) {
             return Err("a inicialização automática exige uma interface instalada".into());
         }
+        let interface = caminho_persistente(interface);
         let caminho = caminho_autostart();
         if caminho.exists() && !gerenciado(&caminho) {
             return Err(format!(
@@ -583,7 +599,7 @@ mod imp {
         }
         fs::create_dir_all(caminho.parent().ok_or("entrada de autostart sem pasta")?)
             .map_err(|erro| format!("não consegui criar a pasta de autostart: {erro}"))?;
-        fs::write(caminho, conteudo(interface))
+        fs::write(caminho, conteudo(&interface))
             .map_err(|erro| format!("não consegui registrar o autostart: {erro}"))
     }
 
@@ -602,8 +618,13 @@ mod imp {
         }
     }
 
-    pub fn comando_desinstalador() -> Result<Command, String> {
-        Err("remova o FOL-discord pelo gerenciador de pacotes da distribuição".into())
+    pub fn comando_desinstalador(servico: &Path) -> Result<Command, String> {
+        if !servico.is_file() {
+            return Err("o serviço instalado não foi encontrado".into());
+        }
+        let mut comando = Command::new(servico);
+        comando.arg("remover-pacote");
+        Ok(comando)
     }
 
     #[cfg(test)]

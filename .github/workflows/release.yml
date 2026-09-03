@@ -151,6 +151,7 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           FOL_DISCORD_PREBUILT_CORE: '1'
+          FOL_DISCORD_CORE_PATH: ${{ github.workspace }}\target\release\fol-discord.exe
         run: npm --prefix interface run tauri -- build --bundles nsis --config src-tauri/tauri.signing.conf.json
 
       - name: Testes da embalagem
@@ -200,7 +201,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fol-discord-cli
-          path: target/release/fol-discord.exe
+          path: |
+            target/release/fol-discord.exe
+            target/x86_64-pc-windows-msvc/release/fol-discord.exe
 
       # A release publica o instalador, e só ele: ele já traz o serviço dentro,
       # então publicar o `fol-discord.exe` solto ao lado só daria a quem vai
@@ -259,3 +262,145 @@ jobs:
             SHA256SUMS.txt
             interface/src-tauri/target/release/bundle/nsis/*-setup.exe
           generate_release_notes: true
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            interface/src-tauri -> target
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: interface/package-lock.json
+
+      - name: Dependências nativas do Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libfuse2t64 \
+            patchelf \
+            rpm
+
+      - name: Dependências da interface
+        run: npm ci --prefix interface
+
+      - name: Testes e lint do núcleo Linux
+        run: |
+          cargo test --release --locked
+          cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Testes e lint da janela Linux
+        run: |
+          cargo test --manifest-path interface/src-tauri/Cargo.toml --locked
+          cargo clippy --manifest-path interface/src-tauri/Cargo.toml \
+            --all-targets --locked -- -D warnings
+
+      - name: Validar receita Arch
+        run: |
+          versao=$(node -p "require('./interface/package.json').version")
+          bash -n packaging/arch/PKGBUILD
+          grep -Fx "pkgver=$versao" packaging/arch/PKGBUILD
+          grep -Fx $'\tpkgver = '"$versao" packaging/arch/.SRCINFO
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$versao" ]]; then
+            echo "a tag $GITHUB_REF_NAME não corresponde à versão $versao" >&2
+            exit 1
+          fi
+
+      - name: Compilar pacotes Linux
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: npm --prefix interface run tauri -- build --bundles deb,rpm,appimage
+
+      - name: Verificar conteúdo dos pacotes Linux
+        run: bash packaging/linux/verificar-pacotes.sh
+
+      - name: Testes da embalagem Linux
+        run: npm --prefix interface test
+
+      - name: Publicar pacotes Linux
+        uses: actions/upload-artifact@v4
+        with:
+          name: fol-discord-linux-x86_64
+          path: |
+            interface/src-tauri/target/release/bundle/deb/*.deb
+            interface/src-tauri/target/release/bundle/rpm/*.rpm
+            interface/src-tauri/target/release/bundle/appimage/*.AppImage
+
+      - name: Nomes estáveis dos pacotes Linux
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cp interface/src-tauri/target/release/bundle/deb/*.deb FOL-discord-x86_64.deb
+          cp interface/src-tauri/target/release/bundle/rpm/*.rpm FOL-discord-x86_64.rpm
+          cp interface/src-tauri/target/release/bundle/appimage/*.AppImage FOL-discord-x86_64.AppImage
+          sha256sum FOL-discord-x86_64.deb FOL-discord-x86_64.rpm FOL-discord-x86_64.AppImage \
+            > SHA256SUMS-linux.txt
+
+      - name: Atestado dos pacotes Linux
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            FOL-discord-x86_64.deb
+            FOL-discord-x86_64.rpm
+            FOL-discord-x86_64.AppImage
+
+      - name: Publicar pacotes Linux na release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            FOL-discord-x86_64.deb
+            FOL-discord-x86_64.rpm
+            FOL-discord-x86_64.AppImage
+            SHA256SUMS-linux.txt
+
+  arch:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compilar pacote Arch Linux
+        run: |
+          docker run --rm \
+            -v "$PWD/packaging/arch:/receita" \
+            archlinux:base-devel \
+            bash -euxo pipefail -c '
+              pacman -Syu --noconfirm --needed git rust nodejs npm \
+                webkit2gtk-4.1 libayatana-appindicator polkit
+              useradd --create-home construtor
+              cp -a /receita /home/construtor/receita
+              chown -R construtor:construtor /home/construtor/receita
+              runuser -u construtor -- bash -lc \
+                "cd /home/construtor/receita && makepkg --noconfirm"
+              cp /home/construtor/receita/*.pkg.tar.zst /receita/
+            '
+
+      - name: Publicar pacote Arch
+        uses: actions/upload-artifact@v4
+        with:
+          name: fol-discord-arch-x86_64
+          path: packaging/arch/*.pkg.tar.zst
+
+      - name: Atestado do pacote Arch
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: packaging/arch/*.pkg.tar.zst
+
+      - name: Publicar pacote Arch na release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packaging/arch/*.pkg.tar.zst

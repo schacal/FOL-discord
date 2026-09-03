@@ -7,14 +7,25 @@ import { fileURLToPath } from "node:url";
 import { coresDistintas, lerPng } from "./png.mjs";
 
 const daqui = fileURLToPath(new URL(".", import.meta.url));
+const windows = process.platform === "win32";
+const sufixoExecutavel = windows ? ".exe" : "";
+const alvo =
+  process.env.TARGET ??
+  `${process.arch === "arm64" ? "aarch64" : "x86_64"}-${
+    windows ? "pc-windows-msvc" : "unknown-linux-gnu"
+  }`;
 const janela = new URL(
-  "../src-tauri/target/release/fol-discord-janela.exe",
+  `../src-tauri/target/release/fol-discord-janela${sufixoExecutavel}`,
   import.meta.url,
 );
 const ponteNativa = new URL("../src-tauri/src/servico.rs", import.meta.url);
 const inicializacao = new URL("../src-tauri/src/inicializacao.rs", import.meta.url);
 const cicloDeVida = new URL("../src-tauri/src/main.rs", import.meta.url);
 const configuracaoTauri = new URL("../src-tauri/tauri.conf.json", import.meta.url);
+const configuracaoLinux = new URL(
+  "../src-tauri/tauri.linux.conf.json",
+  import.meta.url,
+);
 const hooksNsis = new URL("../src-tauri/windows/hooks.nsh", import.meta.url);
 const releaseWorkflow = new URL("../../.github/workflows/release.yml", import.meta.url);
 const nucleo = new URL("../../src/main.rs", import.meta.url);
@@ -23,18 +34,33 @@ const tela = new URL("../src/App.tsx", import.meta.url);
 const marca = new URL("../src/componentes/Marca.tsx", import.meta.url);
 const logoPrincipal = new URL("../../assets/icons/app.png", import.meta.url);
 const pastaSidecar = fileURLToPath(new URL("../src-tauri/binaries/", import.meta.url));
-const nucleoCompiladoCaminho = fileURLToPath(
-  new URL("../../target/release/fol-discord.exe", import.meta.url),
-);
 const pastaNsis = fileURLToPath(
   new URL("../src-tauri/target/release/bundle/nsis/", import.meta.url),
 );
+const receitaArch = new URL("../../packaging/arch/PKGBUILD", import.meta.url);
+
+async function nucleoCompilado() {
+  const candidatos = [
+    new URL(
+      `../../target/${alvo}/release/fol-discord${sufixoExecutavel}`,
+      import.meta.url,
+    ),
+    new URL(`../../target/release/fol-discord${sufixoExecutavel}`, import.meta.url),
+  ];
+  for (const candidato of candidatos) {
+    try {
+      return await readFile(candidato);
+    } catch (erro) {
+      if (erro?.code !== "ENOENT") throw erro;
+    }
+  }
+  throw new Error(`o núcleo não foi compilado para ${alvo}`);
+}
 
 async function sidecarDoServico() {
   const arquivos = await readdir(pastaSidecar);
-  const nome = arquivos.find(
-    (arquivo) => arquivo.startsWith("fol-discord-") && arquivo.endsWith(".exe"),
-  );
+  const esperado = `fol-discord-${alvo}${sufixoExecutavel}`;
+  const nome = arquivos.find((arquivo) => arquivo === esperado);
   if (!nome) throw new Error("o sidecar do serviço não foi gerado pelo build.rs");
   return readFile(join(pastaSidecar, nome));
 }
@@ -43,23 +69,27 @@ test("o instalador leva o serviço como sidecar, e a janela não o carrega como 
   // A leitura é binária dos dois lados. O sidecar precisa ser exatamente o
   // núcleo compilado — publicar uma janela que só conhece o nome do serviço
   // continua sendo o defeito que este teste existe para impedir.
-  const [sidecar, nucleoCompilado, janelaCompilada] = await Promise.all([
+  const [sidecar, nucleoBinario, janelaCompilada] = await Promise.all([
     sidecarDoServico(),
-    readFile(nucleoCompiladoCaminho),
+    nucleoCompilado(),
     readFile(janela),
   ]);
 
   assert.ok(sidecar.length > 1_000_000, "serviço compilado ausente");
-  assert.ok(sidecar.subarray(0, 2).equals(Buffer.from("MZ")), "o sidecar não é um executável");
+  const assinatura = windows ? Buffer.from("MZ") : Buffer.from([0x7f, 0x45, 0x4c, 0x46]);
+  assert.ok(
+    sidecar.subarray(0, assinatura.length).equals(assinatura),
+    "o sidecar não é um executável da plataforma",
+  );
 
   // Tamanho aproximado, não igualdade byte a byte: na release assinada o
   // empacotador pode carimbar a assinatura no sidecar depois da cópia, e aí os
   // bytes divergem legitimamente. O que precisa ser impossível é o sidecar ser
   // outro arquivo qualquer.
-  const diferenca = Math.abs(sidecar.length - nucleoCompilado.length);
+  const diferenca = Math.abs(sidecar.length - nucleoBinario.length);
   assert.ok(
-    diferenca < nucleoCompilado.length * 0.05,
-    `o sidecar (${sidecar.length} B) não parece ser o núcleo (${nucleoCompilado.length} B)`,
+    diferenca < nucleoBinario.length * 0.05,
+    `o sidecar (${sidecar.length} B) não parece ser o núcleo (${nucleoBinario.length} B)`,
   );
 
   // Um PE completo dentro da seção de dados de outro PE é o padrão que os
@@ -330,7 +360,8 @@ test("a tarefa da bandeja usa somente o contrato seguro de logon", async () => {
   assert.match(fonte, /<LogonTrigger>/);
   assert.match(fonte, /<RunLevel>LeastPrivilege<\/RunLevel>/);
   assert.match(fonte, /--bandeja/);
-  assert.match(fonte, /\.fol-discord-instalada/);
+  assert.match(fonte, /join\("fol-discord"\)\.is_file\(\)/);
+  assert.match(fonte, /env::var_os\("APPIMAGE"\)/);
   assert.doesNotMatch(fonte, /\/RL\s+HIGHEST/i);
 });
 
@@ -379,13 +410,41 @@ test("o setup NSIS permanece por usuário e preserva a limpeza do núcleo", asyn
   assert.match(hooks, /desinstalar --manter-arquivos/);
 });
 
-test("a embalagem produz exatamente um setup para download", async () => {
+test("a embalagem produz exatamente um setup para download", { skip: !windows }, async () => {
   const arquivos = await readdir(pastaNsis, { withFileTypes: true });
   const setups = arquivos.filter(
     (arquivo) => arquivo.isFile() && /-setup\.exe$/i.test(arquivo.name),
   );
 
   assert.equal(setups.length, 1, "a embalagem deve conter um único *-setup.exe");
+});
+
+test("a configuração Linux produz deb, rpm e AppImage", async () => {
+  const [texto, pkgbuild] = await Promise.all([
+    readFile(configuracaoLinux, "utf8"),
+    readFile(receitaArch, "utf8"),
+  ]);
+  const configuracao = JSON.parse(texto);
+
+  assert.deepEqual(configuracao.bundle.targets, ["deb", "rpm", "appimage"]);
+  assert.ok(configuracao.bundle.linux.deb.depends.includes("libwebkit2gtk-4.1-0"));
+  assert.ok(configuracao.bundle.linux.rpm.depends.includes("webkit2gtk4.1"));
+  assert.match(pkgbuild, /depends=.*webkit2gtk-4\.1.*libayatana-appindicator/);
+  assert.match(pkgbuild, /FOL_DISCORD_CORE_PATH=/);
+});
+
+test("a CI compila e verifica os pacotes das quatro famílias Linux", async () => {
+  const workflow = await readFile(releaseWorkflow, "utf8");
+
+  assert.match(workflow, /runs-on: ubuntu-24\.04/);
+  assert.match(workflow, /cargo test --manifest-path interface\/src-tauri\/Cargo\.toml/);
+  assert.match(workflow, /build --bundles deb,rpm,appimage/);
+  assert.match(workflow, /verificar-pacotes\.sh/);
+  assert.match(workflow, /archlinux:base-devel/);
+  assert.match(workflow, /makepkg --noconfirm/);
+  assert.match(workflow, /FOL-discord-x86_64\.AppImage/);
+  assert.match(workflow, /GITHUB_REF_NAME[\s\S]*?v\$versao/);
+  assert.match(workflow, /arch:[\s\S]*?needs: linux/);
 });
 
 test("a release pública assina pelo empacotador e verifica os artefatos", async () => {
@@ -424,6 +483,14 @@ test("a release pública assina pelo empacotador e verifica os artefatos", async
   const blocoBuildAssinado = workflow.slice(buildAssinado, testesEmbalagem);
   assert.match(blocoBuildAssinado, /--config src-tauri\/tauri\.signing\.conf\.json/);
   assert.match(blocoBuildAssinado, /FOL_DISCORD_PREBUILT_CORE:\s*['"]?1/);
+  assert.match(
+    blocoBuildAssinado,
+    /FOL_DISCORD_CORE_PATH:[^\n]*target\\release\\fol-discord\.exe/,
+  );
+  assert.match(
+    workflow,
+    /target\/x86_64-pc-windows-msvc\/release\/fol-discord\.exe/,
+  );
 
   const blocoVerificacao = workflow.slice(verificarAssinaturas, publicarSetup);
   assert.ok(blocoVerificacao.includes("target\\release\\fol-discord.exe"));

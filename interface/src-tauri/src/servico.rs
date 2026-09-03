@@ -40,8 +40,11 @@ static VERIFICADOR_DE_ATUALIZACAO: OnceLock<()> = OnceLock::new();
 /// O `cfg` remove o item antes da expansão da macro, então em release o
 /// `include_bytes!` nem chega a ser avaliado e nenhum byte do serviço entra
 /// no binário publicado.
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, windows))]
 const SERVICO_EMBUTIDO: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/fol-discord.exe"));
+
+#[cfg(all(debug_assertions, target_os = "linux"))]
+const SERVICO_EMBUTIDO: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/fol-discord"));
 
 #[derive(Clone, Serialize)]
 pub struct ProxyEmUso {
@@ -143,8 +146,8 @@ fn encerrar_copias_antigas() {
     crate::processos::encerrar_por_nome(plataforma::NOME_SERVICO);
 }
 
-/// O instalador grava o serviço como `fol-discord.exe` ao lado desta janela.
-/// É a mesma cópia que o `hooks.nsh` chama na desinstalação.
+/// O pacote grava o serviço ao lado desta janela. No Windows ele se chama
+/// `fol-discord.exe`; nos pacotes Linux, apenas `fol-discord`.
 fn origem_do_servico() -> Option<PathBuf> {
     let ao_lado = std::env::current_exe()
         .ok()?
@@ -174,12 +177,14 @@ fn gravar_servico(destino: &Path) -> Result<(), String> {
     let novo = destino.with_extension("novo");
     match origem_do_servico() {
         Some(origem) => {
-            fs::copy(&origem, &novo).map_err(|e| format!("não consegui preparar o serviço: {e}"))?;
+            fs::copy(&origem, &novo)
+                .map_err(|e| format!("não consegui preparar o serviço: {e}"))?;
         }
         None => gravar_copia_de_desenvolvimento(&novo)?,
     }
     if destino.exists() {
-        fs::remove_file(destino).map_err(|e| format!("não consegui substituir o serviço antigo: {e}"))?;
+        fs::remove_file(destino)
+            .map_err(|e| format!("não consegui substituir o serviço antigo: {e}"))?;
     }
     fs::rename(&novo, destino).map_err(|e| format!("não consegui instalar o serviço: {e}"))?;
     plataforma::preparar_executavel(destino)
@@ -360,7 +365,10 @@ fn ler_ultima_validacao_em(caminho: &Path) -> Option<u64> {
 fn registrar_ultima_validacao() {
     // A checagem em si já terminou. Não deixamos um disco temporariamente
     // indisponível transformar uma confirmação válida em erro para a pessoa.
-    let _ = registrar_ultima_validacao_em(&caminho_ultima_validacao(), milissegundos(SystemTime::now()));
+    let _ = registrar_ultima_validacao_em(
+        &caminho_ultima_validacao(),
+        milissegundos(SystemTime::now()),
+    );
 }
 
 #[derive(Deserialize)]
@@ -403,29 +411,47 @@ fn versao_mais_nova(remota: &str, local: &str) -> bool {
     false
 }
 
-fn atualizacao_da_release(corpo: &str, versao_local: &str) -> Option<Atualizacao> {
+fn nomes_de_atualizacao(versao: &str, plataforma: &str) -> Vec<String> {
+    match plataforma {
+        "windows" => vec![
+            format!("FOL-discord_{versao}_x64-setup.exe"),
+            "FOL-discord-setup.exe".into(),
+        ],
+        // O AppImage é o artefato portátil entre distribuições; quem instalou
+        // por pacote pode abri-lo sem trocar repositório nem adivinhar se a
+        // máquina usa deb, rpm ou pacman.
+        "linux" => vec!["FOL-discord-x86_64.AppImage".into()],
+        _ => Vec::new(),
+    }
+}
+
+fn atualizacao_da_release_para(
+    corpo: &str,
+    versao_local: &str,
+    plataforma: &str,
+) -> Option<Atualizacao> {
     let release: ReleaseGithub = serde_json::from_str(corpo).ok()?;
     if release.draft || release.prerelease || !versao_mais_nova(&release.tag_name, versao_local) {
         return None;
     }
 
-    let versao = release.tag_name.strip_prefix('v').unwrap_or(&release.tag_name);
+    let versao = release
+        .tag_name
+        .strip_prefix('v')
+        .unwrap_or(&release.tag_name);
     let pasta_da_release = format!(
         "https://github.com/schacal/FOL-discord/releases/download/{}/",
         release.tag_name
     );
 
-    // O nome com versão é o que o NSIS carimba; o nome estável é a cópia que o
-    // botão do README baixa. São o mesmo arquivo. A v0.2.5 saiu só com o
-    // segundo, e quem estava na v0.2.4 nunca soube dela — por isso os dois
-    // servem, nessa ordem. O que não muda: o asset precisa estar dentro da
-    // própria release deste repositório, nunca num endereço de fora.
-    let nome_do_setup = format!("FOL-discord_{versao}_x64-setup.exe");
-    let asset = [nome_do_setup.as_str(), "FOL-discord-setup.exe"]
-        .into_iter()
+    // O artefato precisa estar dentro da própria release deste repositório,
+    // nunca num endereço fornecido por terceiros.
+    let asset = nomes_de_atualizacao(versao, plataforma)
+        .iter()
         .find_map(|nome| {
             release.assets.iter().find(|asset| {
-                asset.name == nome && asset.browser_download_url == format!("{pasta_da_release}{nome}")
+                asset.name == *nome
+                    && asset.browser_download_url == format!("{pasta_da_release}{nome}")
             })
         })?;
 
@@ -433,6 +459,10 @@ fn atualizacao_da_release(corpo: &str, versao_local: &str) -> Option<Atualizacao
         versao: versao.to_string(),
         url: asset.browser_download_url.clone(),
     })
+}
+
+fn atualizacao_da_release(corpo: &str, versao_local: &str) -> Option<Atualizacao> {
+    atualizacao_da_release_para(corpo, versao_local, std::env::consts::OS)
 }
 
 fn consultar_atualizacao() -> Result<Option<Atualizacao>, String> {
@@ -527,10 +557,8 @@ fn interpretar_conexoes(log: &str, hora_utc: u64) -> Vec<Conexao> {
             let texto = linha.trim();
             let (rota, destino) = if let Some(destino) = texto.strip_prefix("exterior  ") {
                 ("exterior", destino)
-            } else if let Some(destino) = texto.strip_prefix("direto    ") {
-                ("direto", destino)
             } else {
-                return None;
+                ("direto", texto.strip_prefix("direto    ")?)
             };
             let (host, porta) = destino.rsplit_once(':')?;
             let porta = porta.parse().ok()?;
@@ -603,7 +631,8 @@ pub fn verificar() -> Result<Verificacao, String> {
         ok: false,
         regiao_detectada: None,
         proxies_saudaveis: 0,
-        mensagem: "O serviço ainda está iniciando. Aguarde alguns segundos e verifique de novo.".into(),
+        mensagem: "O serviço ainda está iniciando. Aguarde alguns segundos e verifique de novo."
+            .into(),
     });
     registrar_ultima_validacao();
     Ok(resultado)
@@ -614,7 +643,10 @@ fn verificacao_do_status(atual: &Status) -> Verificacao {
     let (ok, mensagem) = match atual.estado {
         "operacional" => (true, "O serviço e os proxies estão prontos."),
         "pausado" => (false, "A correção está pausada."),
-        "sem_proxies" => (false, "O serviço está ligado, mas ainda procura proxies saudáveis."),
+        "sem_proxies" => (
+            false,
+            "O serviço está ligado, mas ainda procura proxies saudáveis.",
+        ),
         _ => (false, "O serviço não está respondendo."),
     };
     Verificacao {
@@ -643,7 +675,7 @@ pub fn reiniciar_discord() -> Result<bool, String> {
 }
 
 pub fn comando_desinstalador() -> Result<Command, String> {
-    inicializacao::comando_desinstalador()
+    inicializacao::comando_desinstalador(&executavel_instalado())
 }
 
 pub fn registrar_erro_inicializacao(erro: String) {
@@ -662,7 +694,7 @@ fn erro_inicializacao() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        atualizacao_da_release, consulta_vale_a_pena, interpretar_conexoes,
+        atualizacao_da_release_para, consulta_vale_a_pena, interpretar_conexoes,
         ler_ultima_validacao_em, mesmos_bytes, registrar_ultima_validacao_em,
     };
     use std::{
@@ -686,7 +718,10 @@ mod tests {
 
         fs::write(&instalada, b"antiga").unwrap();
         assert!(!mesmos_bytes(&instalador, &instalada));
-        assert!(!mesmos_bytes(&instalador, &pasta.path().join("nao-existe.exe")));
+        assert!(!mesmos_bytes(
+            &instalador,
+            &pasta.path().join("nao-existe.exe")
+        ));
     }
 
     #[test]
@@ -745,7 +780,7 @@ conexão encerrada: early eof\n",
           ]
         }"#;
 
-        let atualizacao = atualizacao_da_release(release, "0.2.4")
+        let atualizacao = atualizacao_da_release_para(release, "0.2.4", "windows")
             .expect("a release estável com setup deve aparecer");
 
         assert_eq!(atualizacao.versao, "0.2.5");
@@ -771,7 +806,7 @@ conexão encerrada: early eof\n",
           }]
         }"#;
 
-        let atualizacao = atualizacao_da_release(release, "0.2.4")
+        let atualizacao = atualizacao_da_release_para(release, "0.2.4", "windows")
             .expect("a cópia de nome estável deve bastar para avisar");
 
         assert_eq!(atualizacao.versao, "0.2.5");
@@ -779,6 +814,23 @@ conexão encerrada: early eof\n",
             atualizacao.url,
             "https://github.com/schacal/FOL-discord/releases/download/v0.2.5/FOL-discord-setup.exe"
         );
+    }
+
+    #[test]
+    fn linux_oferece_o_appimage_portatil_da_release() {
+        let release = r#"{
+          "tag_name": "v0.2.5",
+          "draft": false,
+          "prerelease": false,
+          "assets": [{
+            "name": "FOL-discord-x86_64.AppImage",
+            "browser_download_url": "https://github.com/schacal/FOL-discord/releases/download/v0.2.5/FOL-discord-x86_64.AppImage"
+          }]
+        }"#;
+
+        let atualizacao = atualizacao_da_release_para(release, "0.2.4", "linux").unwrap();
+        assert_eq!(atualizacao.versao, "0.2.5");
+        assert!(atualizacao.url.ends_with("FOL-discord-x86_64.AppImage"));
     }
 
     #[test]
@@ -808,12 +860,12 @@ conexão encerrada: early eof\n",
           }]
         }"#;
 
-        let atualizacao = atualizacao_da_release(com_os_dois, "0.2.5").unwrap();
+        let atualizacao = atualizacao_da_release_para(com_os_dois, "0.2.5", "windows").unwrap();
         assert_eq!(
             atualizacao.url,
             "https://github.com/schacal/FOL-discord/releases/download/v0.2.6/FOL-discord_0.2.6_x64-setup.exe"
         );
-        assert!(atualizacao_da_release(fora_da_release, "0.2.5").is_none());
+        assert!(atualizacao_da_release_para(fora_da_release, "0.2.5", "windows").is_none());
     }
 
     #[test]
@@ -837,8 +889,8 @@ conexão encerrada: early eof\n",
           }]
         }"#;
 
-        assert!(atualizacao_da_release(sem_setup, "0.2.4").is_none());
-        assert!(atualizacao_da_release(pre_lancamento, "0.2.4").is_none());
+        assert!(atualizacao_da_release_para(sem_setup, "0.2.4", "windows").is_none());
+        assert!(atualizacao_da_release_para(pre_lancamento, "0.2.4", "windows").is_none());
     }
 
     #[test]
@@ -848,10 +900,7 @@ conexão encerrada: early eof\n",
 
         registrar_ultima_validacao_em(&arquivo, 1_725_000_123_456).unwrap();
 
-        assert_eq!(
-            ler_ultima_validacao_em(&arquivo),
-            Some(1_725_000_123_456)
-        );
+        assert_eq!(ler_ultima_validacao_em(&arquivo), Some(1_725_000_123_456));
         assert_eq!(fs::read_to_string(arquivo).unwrap(), "1725000123456\n");
     }
 }
