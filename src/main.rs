@@ -2,23 +2,26 @@
 //!
 //! O Discord decide a região da sua sessão pelo IP que enxerga na abertura.
 //! Em vários provedores brasileiros essa decisão sai errada e a transmissão de
-//! tela para de funcionar. Este programa faz só o punhado de conexões que
-//! determinam essa decisão sair por um IP estrangeiro. A voz, a tela e o resto
-//! da internet continuam saindo direto, com o ping de sempre.
+//! tela para de funcionar. Este programa faz o mesmo que ligar uma VPN para
+//! abrir o Discord e desligá-la assim que ele entrou: enquanto a sessão está
+//! nascendo, o tráfego do Discord que decide a região sai por um IP
+//! estrangeiro; depois, tudo volta a sair direto, com o ping de sempre, e a
+//! região fica gravada na sessão. A voz, a câmera e a tela são UDP e nunca
+//! passam por aqui — nem o TCP dos servidores de voz, que não decide região
+//! nenhuma, sai do país.
 
 #![windows_subsystem = "windows"]
 
 mod discord;
 mod pac;
-mod pool;
 mod plataforma;
+mod pool;
 mod processos;
 mod routing;
 mod sessao;
 mod socks;
 
 use anyhow::{bail, Context, Result};
-use routing::Modo;
 use std::{ffi::OsStr, path::PathBuf, process::Command, time::Duration};
 
 #[cfg(windows)]
@@ -26,7 +29,6 @@ use std::os::windows::process::CommandExt;
 
 const PORTA_SOCKS: u16 = 9250;
 const PORTA_PAC: u16 = 9251;
-const MINIMO_SAUDAVEIS: usize = 3;
 const INTERVALO_MANUTENCAO: Duration = Duration::from_secs(300);
 
 /// Passada do vigia da sessão. Curto o bastante para a janela fechar logo
@@ -121,11 +123,6 @@ fn main() -> Result<()> {
     anexar_console();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let modo = if args.iter().any(|a| a == "--tudo-discord") {
-        Modo::TudoDiscord
-    } else {
-        Modo::Controle
-    };
     let comando = args
         .iter()
         .find(|a| !a.starts_with("--"))
@@ -142,7 +139,7 @@ fn main() -> Result<()> {
         #[cfg(target_os = "linux")]
         "remover-pacote" => remover_pacote(),
         "reiniciar-discord" => reiniciar_discord(),
-        "rodar" => rodar(modo),
+        "rodar" => rodar(),
         _ => {
             ajuda();
             Ok(())
@@ -166,9 +163,7 @@ fn ajuda() {
          --sem-reiniciar           não mexe no Discord aberto; a correção vale na\n                            \
          próxima vez que você abrir\n  \
          --sem-autostart           não cria a entrada automática (uso do setup)\n  \
-         --manter-arquivos         limpa a configuração sem apagar a pasta instalada\n  \
-         --tudo-discord            manda todo domínio do Discord pro exterior\n                            \
-         (use só se a correção padrão não bastar)\n",
+         --manter-arquivos         limpa a configuração sem apagar a pasta instalada\n",
         env!("CARGO_PKG_VERSION")
     );
 }
@@ -189,8 +184,7 @@ fn instalar(opcoes: OpcoesInstalar) -> Result<()> {
     }
 
     if opcoes.criar_run_legado {
-        plataforma::ativar_autostart(&destino)
-            .context("registrando o autostart")?;
+        plataforma::ativar_autostart(&destino).context("registrando o autostart")?;
     }
     plataforma::ativar_pac(&url_pac(), &destino).context("ligando o proxy automático")?;
     let _ = plataforma::registrar_cli(&destino);
@@ -295,7 +289,10 @@ fn status() -> Result<()> {
     println!("\nfol-discord {}\n", env!("CARGO_PKG_VERSION"));
     println!("  instalado  : {}", sim_nao(caminho_instalado().exists()));
     println!("  autostart  : {}", sim_nao(plataforma::autostart_ativo()));
-    println!("  PAC ligado : {}", sim_nao(plataforma::pac_ativo(&url_pac())));
+    println!(
+        "  PAC ligado : {}",
+        sim_nao(plataforma::pac_ativo(&url_pac()))
+    );
     println!("  rodando    : {}", sim_nao(porta_ocupada(PORTA_SOCKS)));
     println!(
         "  no PATH    : {}",
@@ -335,7 +332,10 @@ fn abrir_discord(args: &[String]) -> Result<()> {
     if !porta_ocupada(PORTA_SOCKS) {
         let servico = caminho_instalado();
         if !servico.is_file() {
-            bail!("o serviço instalado não foi encontrado em {}", servico.display());
+            bail!(
+                "o serviço instalado não foi encontrado em {}",
+                servico.display()
+            );
         }
         comando_oculto(&servico)
             .arg("rodar")
@@ -406,22 +406,33 @@ fn vigiar_sessao(sessao: std::sync::Arc<sessao::Sessao>, piscina: pool::Pool) {
     std::thread::spawn(move || loop {
         let agora = std::time::Instant::now();
 
-        if sessao.observar_discord(&discord::pids(), agora) {
-            socks::log::linha("Discord novo no ar; a correção vale para esta sessão");
+        match sessao.observar_discord(discord::principal(), agora) {
+            Some(sessao::Mudanca::DiscordNovo) => {
+                socks::log::linha("Discord novo no ar; a correção vale para esta sessão");
+            }
+            Some(sessao::Mudanca::DiscordFechou) => {
+                socks::log::linha("Discord fechou; a janela reabre para a próxima abertura");
+            }
+            None => {}
         }
 
         if sessao.avaliar(agora, piscina.quantidade() > 0) {
             // A região já está gravada na sessão. Daqui em diante o Discord
             // fala direto, e quem ficou preso no exterior acabou de cair para
-            // reconectar pelo caminho curto.
-            socks::log::linha("sessão aberta; o Discord volta a falar direto");
+            // reconectar pelo caminho curto — a VPN desligou. A duração conta
+            // desde que a janela armou, e ajuda a ler o log sem contar linha
+            // por linha.
+            let duracao = sessao.armada_ha(agora).as_secs();
+            socks::log::linha(&format!(
+                "sessão aberta após {duracao} s; o Discord volta a falar direto"
+            ));
         }
 
         std::thread::sleep(INTERVALO_VIGIA);
     });
 }
 
-fn rodar(modo: Modo) -> Result<()> {
+fn rodar() -> Result<()> {
     let _ = std::fs::create_dir_all(pasta_dados());
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -436,7 +447,7 @@ fn rodar(modo: Modo) -> Result<()> {
             let p = piscina.clone();
             async move {
                 loop {
-                    if p.quantidade() < MINIMO_SAUDAVEIS {
+                    if p.quantidade() < pool::MINIMO_SAUDAVEIS {
                         socks::log::linha("reabastecendo a piscina de proxies...");
                         match p.reabastecer().await {
                             Ok(n) => {
@@ -466,7 +477,19 @@ fn rodar(modo: Modo) -> Result<()> {
                     // Um travessão em "Última checagem" tem que querer dizer
                     // "o serviço não olhou", não "o serviço olhou e falhou".
                     registrar_checagem_em(&caminho_ultima_validacao(), milissegundos_agora());
-                    tokio::time::sleep(INTERVALO_MANUTENCAO).await;
+
+                    // A próxima passada é daqui a cinco minutos — a menos que a
+                    // piscina seque antes. Com todo o Discord saindo pelo
+                    // exterior na abertura, um proxy ruim é rebaixado em duas
+                    // conexões, e esperar cinco minutos com a piscina vazia
+                    // seria cinco minutos de janela aberta sem para onde
+                    // desviar.
+                    tokio::select! {
+                        _ = tokio::time::sleep(INTERVALO_MANUTENCAO) => {}
+                        _ = p.esperar_secar() => {
+                            socks::log::linha("a piscina ficou magra; a manutenção acordou antes da hora");
+                        }
+                    }
                 }
             }
         });
@@ -477,7 +500,7 @@ fn rodar(modo: Modo) -> Result<()> {
             }
         });
 
-        socks::servir(PORTA_SOCKS, piscina, modo, sessao).await
+        socks::servir(PORTA_SOCKS, piscina, sessao).await
     })
 }
 
@@ -494,8 +517,8 @@ fn anexar_console() {
                 OPEN_EXISTING,
             },
             System::Console::{
-                AttachConsole, GetStdHandle, SetStdHandle, ATTACH_PARENT_PROCESS,
-                STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
+                AttachConsole, GetStdHandle, SetStdHandle, ATTACH_PARENT_PROCESS, STD_ERROR_HANDLE,
+                STD_OUTPUT_HANDLE,
             },
         };
 

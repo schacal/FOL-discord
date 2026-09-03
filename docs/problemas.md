@@ -35,12 +35,11 @@ Se continuar, veja por onde as conexões saíram:
 Get-Content "$env:LOCALAPPDATA\FolDiscord\fol.log" -Tail 30 -Encoding utf8
 ```
 
-**Se aparecem linhas `exterior discord.com:443`** — o encaminhamento está funcionando e o problema é outro. Vale tentar a rede de segurança, que manda todo domínio do Discord por fora:
+**Se aparecem linhas `exterior discord.com:443`** — o encaminhamento está funcionando. Confira a ordem: a linha `sessão aberta após N s; o Discord volta a falar direto` marca o fim do desvio e tem que vir **depois** de `exterior latency.discord.media:443`. Se veio antes, a abertura foi cortada no meio — abra uma issue com esse trecho do log.
 
-```powershell
-fol-discord desinstalar
-fol-discord instalar --tudo-discord
-```
+**Se aparece `a janela fechou durante o aperto de mão`** — não é erro: a janela venceu enquanto um proxy demorava a responder, e a conexão foi aberta direto em vez de nascer no exterior só para cair em seguida.
+
+**Se aparece `suspeita: gateway novo`** — o Discord reconectou depois de um vão longo sem gateway (o PC dormiu, a internet caiu) e a sessão pode ter renascido pelo IP brasileiro. O programa não reinicia o Discord por conta disso, porque não consegue ter certeza; se a tela parou de funcionar, feche e abra o Discord.
 
 **Se aparece `exterior indisponível`** — a piscina secou. Veja a seção seguinte.
 
@@ -150,7 +149,7 @@ ainda, a busca não acha nada; isso só quer dizer que você é o primeiro.
 1. **Conferir o arquivo** pelo SHA-256 e pelo atestado de procedência — está em
    [Segurança](seguranca.md#conferindo-o-instalador-que-você-baixou).
 2. **Compilar você mesmo** com `cargo build --release` e comparar.
-3. **Ler o código** — são cerca de 1.600 linhas em oito arquivos no serviço.
+3. **Ler o código** — são cerca de 2.900 linhas em nove arquivos no serviço, um quarto delas testes.
 4. **Reportar o falso positivo.** É o único caminho que tira a detecção do banco
    do fabricante, e vale para todo mundo que baixar depois.
 

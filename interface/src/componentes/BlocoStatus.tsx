@@ -99,7 +99,7 @@ export function BlocoStatus({
         onClick={aoAlternarPausa}
         title={
           pausado
-            ? "Voltar a mandar o tráfego de controle pelo exterior"
+            ? "Voltar a mandar a abertura do Discord pelo exterior"
             : "Mandar tudo direto, como se o programa não existisse"
         }
       >

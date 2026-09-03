@@ -8,11 +8,13 @@ Como o repositório está organizado, e como compilar e testar cada metade.
 fol-discord/
 ├── src/                    o serviço, em Rust
 │   ├── main.rs        instalação, desinstalação, status, laço principal
-│   ├── routing.rs     decide, por host, quem sai por fora
+│   ├── routing.rs     decide, por host, quem sai por fora e quem segura a janela
+│   ├── sessao.rs      a janela de abertura: quando abre, quando fecha, quem derruba
 │   ├── socks.rs       o proxy local em 127.0.0.1:9250
 │   ├── pool.rs        piscina de proxies públicos, com auto-cura
 │   ├── pac.rs         o arquivo PAC que o Windows lê
 │   ├── discord.rs     encontra e reinicia o Discord
+│   ├── processos.rs   lista e encerra processos pela API do Windows
 │   └── windows.rs     registro: PAC, autostart, PATH — e como desfazê-los
 ├── interface/              a janela instaladora, em Tauri + React
 │   ├── src/           a janela: estados, métricas, atividade
